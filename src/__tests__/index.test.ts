@@ -59,6 +59,42 @@ function unexpectedStatusEvent(sessionID: string) {
   }
 }
 
+function sessionIdleEvent(sessionID: string) {
+  return {
+    event: {
+      type: "session.idle" as const,
+      properties: { sessionID },
+    },
+  }
+}
+
+function sessionDeletedEvent(sessionID: string) {
+  return {
+    event: {
+      type: "session.deleted" as const,
+      properties: { sessionID },
+    },
+  }
+}
+
+function permissionAskedEvent(sessionID: string, permType: string) {
+  return {
+    event: {
+      type: "permission.asked" as const,
+      properties: { sessionID, type: permType },
+    },
+  }
+}
+
+function messageDeltaEvent(sessionID: string) {
+  return {
+    event: {
+      type: "message.part.delta" as const,
+      properties: { sessionID },
+    },
+  }
+}
+
 function questionEvent(sessionID: string) {
   return {
     event: {
@@ -157,6 +193,28 @@ describe("tmux-opencode plugin", () => {
     expect(existsSync(path.join(tmpDir, "ses-cleanup.json"))).toBe(false)
   })
 
+  it("deletes the snapshot when a session.idle event arrives", async () => {
+    const client = makeClient()
+    const hooks = await plugin({ client } as never)
+
+    await hooks.event!(busyEvent("ses-idle-event"))
+    expect(existsSync(path.join(tmpDir, "ses-idle-event.json"))).toBe(true)
+
+    await hooks.event!(sessionIdleEvent("ses-idle-event") as never)
+    expect(existsSync(path.join(tmpDir, "ses-idle-event.json"))).toBe(false)
+  })
+
+  it("deletes the snapshot when a session is deleted", async () => {
+    const client = makeClient()
+    const hooks = await plugin({ client } as never)
+
+    await hooks.event!(busyEvent("ses-deleted"))
+    expect(existsSync(path.join(tmpDir, "ses-deleted.json"))).toBe(true)
+
+    await hooks.event!(sessionDeletedEvent("ses-deleted") as never)
+    expect(existsSync(path.join(tmpDir, "ses-deleted.json"))).toBe(false)
+  })
+
   it("ignores non-busy non-idle session.status updates", async () => {
     const client = makeClient({ title: "Still active" })
     const hooks = await plugin({ client } as never)
@@ -180,6 +238,28 @@ describe("tmux-opencode plugin", () => {
     expect(snap.status).toBe("waiting")
     expect(snap.summary).toContain("shell")
     expect(snap.title).toBe("Needs approval")
+  })
+
+  it("writes a waiting snapshot for permission.asked events", async () => {
+    const client = makeClient({ title: "Needs approval" })
+    const hooks = await plugin({ client } as never)
+    await hooks.event!(permissionAskedEvent("ses-perm-event", "shell") as never)
+
+    const snap = readSnapshot(tmpDir, "ses-perm-event")
+    expect(snap.status).toBe("waiting")
+    expect(snap.summary).toContain("shell")
+    expect(snap.title).toBe("Needs approval")
+  })
+
+  it("writes a working snapshot for message delta events", async () => {
+    const client = makeClient({ title: "Streaming reply" })
+    const hooks = await plugin({ client } as never)
+    await hooks.event!(messageDeltaEvent("ses-delta") as never)
+
+    const snap = readSnapshot(tmpDir, "ses-delta")
+    expect(snap.status).toBe("working")
+    expect(snap.title).toBe("Streaming reply")
+    expect(snap.summary).toContain("busy")
   })
 
   it("marks permission.ask snapshots as subagent when parentID is present", async () => {
