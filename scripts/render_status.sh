@@ -7,13 +7,10 @@ show_subagents="${TMUX_OPENCODE_SHOW_SUBAGENTS:-0}"
 STATUS_DIR="$status_dir" SHOW_SUBAGENTS="$show_subagents" python3 <<'PY'
 import json
 import os
-import time
 from pathlib import Path
 
 status_dir = Path(os.environ["STATUS_DIR"])
 show_subagents = os.environ.get("SHOW_SUBAGENTS") == "1"
-stale_after_ms = 60_000
-now = int(time.time() * 1000)
 rows = []
 
 if status_dir.exists():
@@ -28,8 +25,6 @@ if status_dir.exists():
 
         updated_at = payload.get("updatedAt")
         if not isinstance(updated_at, int):
-            continue
-        if now - updated_at > stale_after_ms:
             continue
 
         kind = payload.get("kind")

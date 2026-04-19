@@ -67,7 +67,7 @@ cat > "$WORK_DIR/stale.json" <<'JSON'
 }
 JSON
 output="$(TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" bash "$ROOT_DIR/scripts/render_status.sh")"
-assert_not_contains "$output" "Old session"
+assert_contains "$output" "Old session"
 
 EMPTY_DIR="$(mktemp -d "${TMPDIR:-/tmp}/tmux-opencode-empty.XXXXXX")"
 trap 'rm -rf "$WORK_DIR" "$EMPTY_DIR"' EXIT
