@@ -61,6 +61,53 @@ To override the snapshot directory:
 export TMUX_OPENCODE_STATUS_DIR="$HOME/.cache/opencode-status"
 ```
 
+### Local development
+
+Build the plugin first:
+
+```bash
+npm run build
+```
+
+Then add it to OpenCode with either of these approaches:
+
+1. Symlink the built entrypoint into the global plugin directory:
+
+```bash
+mkdir -p ~/.config/opencode/plugin
+ln -sf "$(pwd)/dist/index.js" ~/.config/opencode/plugin/tmux-opencode.js
+```
+
+2. Or register the built file explicitly in your OpenCode config:
+
+```json
+{
+  "plugin": ["file:///absolute/path/to/tmux-opencode/dist/index.js"]
+}
+```
+
+Restart OpenCode after rebuilding or changing the plugin.
+
+### Normal user install
+
+Until this package is published, normal users should use the same file-based install flow as local development: point OpenCode at the built `dist/index.js` file, either through `~/.config/opencode/plugin/` or a `file://...` plugin entry in `opencode.json`.
+
+Once the package is published, users can install it by package name instead:
+
+```json
+{
+  "plugin": ["tmux-opencode"]
+}
+```
+
+Or with the helper CLI:
+
+```bash
+ocx add npm:tmux-opencode
+```
+
+Because the package is currently marked `"private": true`, the npm-style install path is not available yet.
+
 ## tmux / TPM setup
 
 Add the plugin to your `.tmux.conf`:
