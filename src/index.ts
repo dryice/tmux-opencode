@@ -77,16 +77,6 @@ const plugin: Plugin = async ({ client }) => ({
       await writeCurrentSnapshot(client, sessionID, "waiting", `Permission required: ${event.properties?.type ?? "unknown"}`)
       return
     }
-
-    if (
-      event.type === "message.updated"
-      || event.type === "message.part.updated"
-      || event.type === "message.part.delta"
-      || event.type === "session.created"
-      || event.type === "session.updated"
-    ) {
-      await writeCurrentSnapshot(client, sessionID, "working", "Session is busy")
-    }
   },
 
   async "permission.ask"(input) {

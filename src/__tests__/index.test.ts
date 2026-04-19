@@ -251,15 +251,13 @@ describe("tmux-opencode plugin", () => {
     expect(snap.title).toBe("Needs approval")
   })
 
-  it("writes a working snapshot for message delta events", async () => {
+  it("ignores message delta events (status driven by session.status only)", async () => {
     const client = makeClient({ title: "Streaming reply" })
     const hooks = await plugin({ client } as never)
     await hooks.event!(messageDeltaEvent("ses-delta") as never)
 
-    const snap = readSnapshot(tmpDir, "ses-delta")
-    expect(snap.status).toBe("working")
-    expect(snap.title).toBe("Streaming reply")
-    expect(snap.summary).toContain("busy")
+    expect(existsSync(path.join(tmpDir, "ses-delta.json"))).toBe(false)
+    expect(client.session.get).not.toHaveBeenCalled()
   })
 
   it("marks permission.ask snapshots as subagent when parentID is present", async () => {
