@@ -2,7 +2,6 @@ import os from "node:os"
 import path from "node:path"
 
 export const STATUS_DIR_ENV_KEY = "TMUX_OPENCODE_STATUS_DIR"
-export const STALE_AFTER_MS = 60_000
 
 export type SessionStatus = "working" | "waiting" | "question" | "idle" | "error"
 export type SessionKind = "root" | "subagent"

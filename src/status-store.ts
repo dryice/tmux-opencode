@@ -1,6 +1,5 @@
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
-import { STALE_AFTER_MS } from "./types"
 import type { SessionSnapshot } from "./types"
 
 export async function writeSnapshot(directory: string, snapshot: SessionSnapshot): Promise<void> {
@@ -29,6 +28,5 @@ export async function listSnapshots(directory: string): Promise<SessionSnapshot[
       }
     }),
   )
-  const now = Date.now()
-  return parsed.filter((snapshot): snapshot is SessionSnapshot => snapshot !== null && now - snapshot.updatedAt <= STALE_AFTER_MS)
+  return parsed.filter((snapshot): snapshot is SessionSnapshot => snapshot !== null)
 }

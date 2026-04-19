@@ -3,7 +3,6 @@ import { mkdtempSync, readFileSync, readdirSync, existsSync, writeFileSync } fro
 import os from "node:os"
 import path from "node:path"
 import { writeSnapshot, deleteSnapshot, listSnapshots } from "../status-store"
-import { STALE_AFTER_MS } from "../types"
 
 describe("writeSnapshot", () => {
   it("writes an atomic session snapshot file", async () => {
@@ -108,7 +107,7 @@ describe("listSnapshots", () => {
     expect(snapshots[0].sessionID).toBe("fresh-1")
   })
 
-  it("filters out snapshots older than STALE_AFTER_MS", async () => {
+  it("keeps older snapshots until they are explicitly deleted", async () => {
     const directory = mkdtempSync(path.join(os.tmpdir(), "tmux-opencode-"))
     await writeSnapshot(directory, {
       version: 1,
@@ -118,7 +117,7 @@ describe("listSnapshots", () => {
       title: "Stale",
       status: "working",
       summary: "Old",
-      updatedAt: Date.now() - STALE_AFTER_MS - 1,
+      updatedAt: 1,
     })
     await writeSnapshot(directory, {
       version: 1,
@@ -132,8 +131,8 @@ describe("listSnapshots", () => {
     })
 
     const snapshots = await listSnapshots(directory)
-    expect(snapshots).toHaveLength(1)
-    expect(snapshots[0].sessionID).toBe("fresh-2")
+    expect(snapshots).toHaveLength(2)
+    expect(snapshots.map((snapshot) => snapshot.sessionID).sort()).toEqual(["fresh-2", "stale-1"])
   })
 
   it("returns an empty array for an empty directory", async () => {
