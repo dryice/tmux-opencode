@@ -136,6 +136,7 @@ The tmux entrypoint is `tmux-opencode.tmux`. It binds the configured key to `scr
 - To include subagents, set `TMUX_OPENCODE_SHOW_SUBAGENTS=1` in the tmux environment before launching the popup.
 - Malformed snapshot files are ignored.
 - Snapshots older than 60 seconds are treated as stale and hidden.
+- The popup stays open until you press a key.
 - If no valid snapshots exist, the popup shows `No active opencode sessions`.
 
 ## Manual smoke test
