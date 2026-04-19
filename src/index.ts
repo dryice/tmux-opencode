@@ -11,9 +11,16 @@ type PluginEvent = {
   type: string
   properties?: {
     sessionID?: string
+    info?: {
+      id?: string
+    }
     status?: { type?: string }
     type?: string
   }
+}
+
+function eventSessionID(event: PluginEvent): string | undefined {
+  return event.properties?.sessionID ?? event.properties?.info?.id
 }
 
 async function readSession(client: { session: { get: (input: { path: { id: string } }) => Promise<{ data?: { parentID?: string; title: string } | null }> } }, sessionID: string) {
@@ -42,46 +49,48 @@ async function writeCurrentSnapshot(
   })
 }
 
-const plugin: Plugin = async ({ client }) => ({
-  async event(input) {
-    const event = input.event as PluginEvent
-    const sessionID = event.properties?.sessionID
-    if (!sessionID) {
-      return
-    }
+const plugin: Plugin = async ({ client }) => {
+  return {
+    async event(input) {
+      const event = input.event as PluginEvent
+      const sessionID = eventSessionID(event)
+      if (!sessionID) {
+        return
+      }
 
-    if (event.type === "session.deleted" || event.type === "session.idle") {
-      await deleteSnapshot(directory(), sessionID)
-      return
-    }
-
-    if (event.type === "session.status") {
-      if (event.properties?.status?.type === "idle") {
+      if (event.type === "session.deleted" || event.type === "session.idle") {
         await deleteSnapshot(directory(), sessionID)
         return
       }
 
-      if (event.properties?.status?.type === "busy" || event.properties?.status?.type === "retry") {
-        await writeCurrentSnapshot(client, sessionID, "working", "Session is busy")
+      if (event.type === "session.status") {
+        if (event.properties?.status?.type === "idle") {
+          await deleteSnapshot(directory(), sessionID)
+          return
+        }
+
+        if (event.properties?.status?.type === "busy" || event.properties?.status?.type === "retry") {
+          await writeCurrentSnapshot(client, sessionID, "working", "Session is busy")
+        }
+
+        return
       }
 
-      return
-    }
+      if (event.type === "question.asked") {
+        await writeCurrentSnapshot(client, sessionID, "question", "Question asked")
+        return
+      }
 
-    if (event.type === "question.asked") {
-      await writeCurrentSnapshot(client, sessionID, "question", "Question asked")
-      return
-    }
+      if (event.type === "permission.asked") {
+        await writeCurrentSnapshot(client, sessionID, "waiting", `Permission required: ${event.properties?.type ?? "unknown"}`)
+        return
+      }
+    },
 
-    if (event.type === "permission.asked") {
-      await writeCurrentSnapshot(client, sessionID, "waiting", `Permission required: ${event.properties?.type ?? "unknown"}`)
-      return
-    }
-  },
-
-  async "permission.ask"(input) {
-    await writeCurrentSnapshot(client, input.sessionID, "waiting", `Permission required: ${input.type}`)
-  },
-})
+    async "permission.ask"(input) {
+      await writeCurrentSnapshot(client, input.sessionID, "waiting", `Permission required: ${input.type}`)
+    },
+  }
+}
 
 export default plugin

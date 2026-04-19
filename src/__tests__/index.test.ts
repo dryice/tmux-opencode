@@ -77,6 +77,24 @@ function sessionDeletedEvent(sessionID: string) {
   }
 }
 
+function sessionDeletedInfoEvent(sessionID: string) {
+  return {
+    event: {
+      type: "session.deleted" as const,
+      properties: {
+        info: {
+          id: sessionID,
+          title: "Deleted session",
+          projectID: "proj-1",
+          directory: "/tmp",
+          version: "1",
+          time: { created: 0, updated: 0 },
+        },
+      },
+    },
+  }
+}
+
 function permissionAskedEvent(sessionID: string, permType: string) {
   return {
     event: {
@@ -215,6 +233,17 @@ describe("tmux-opencode plugin", () => {
     expect(existsSync(path.join(tmpDir, "ses-deleted.json"))).toBe(false)
   })
 
+  it("deletes the snapshot when session.deleted provides the id in properties.info", async () => {
+    const client = makeClient()
+    const hooks = await plugin({ client } as never)
+
+    await hooks.event!(busyEvent("ses-deleted-info"))
+    expect(existsSync(path.join(tmpDir, "ses-deleted-info.json"))).toBe(true)
+
+    await hooks.event!(sessionDeletedInfoEvent("ses-deleted-info") as never)
+    expect(existsSync(path.join(tmpDir, "ses-deleted-info.json"))).toBe(false)
+  })
+
   it("ignores non-busy non-idle session.status updates", async () => {
     const client = makeClient({ title: "Still active" })
     const hooks = await plugin({ client } as never)
@@ -271,5 +300,19 @@ describe("tmux-opencode plugin", () => {
     expect(snap.kind).toBe("subagent")
     expect(snap.parentID).toBe("root-1")
     expect(snap.status).toBe("waiting")
+  })
+
+  it("keeps snapshots from another running instance when a new plugin instance initializes", async () => {
+    const firstHooks = await plugin({ client: makeClient({ title: "First session" }) } as never)
+    await firstHooks.event!(busyEvent("ses-first"))
+
+    expect(existsSync(path.join(tmpDir, "ses-first.json"))).toBe(true)
+
+    const secondHooks = await plugin({ client: makeClient({ title: "Second session" }) } as never)
+    await secondHooks.event!(busyEvent("ses-second"))
+
+    expect(existsSync(path.join(tmpDir, "ses-first.json"))).toBe(true)
+    expect(readSnapshot(tmpDir, "ses-first").title).toBe("First session")
+    expect(readSnapshot(tmpDir, "ses-second").title).toBe("Second session")
   })
 })
