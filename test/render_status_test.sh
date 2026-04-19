@@ -74,4 +74,8 @@ trap 'rm -rf "$WORK_DIR" "$EMPTY_DIR"' EXIT
 output="$(TMUX_OPENCODE_STATUS_DIR="$EMPTY_DIR" bash "$ROOT_DIR/scripts/render_status.sh")"
 assert_contains "$output" "No active opencode sessions"
 
+popup_output="$(printf 'x' | TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" bash "$ROOT_DIR/scripts/popup_command.sh")"
+assert_contains "$popup_output" "Main session"
+assert_contains "$popup_output" "Press any key to close"
+
 printf 'render_status_test.sh: PASS\n'
