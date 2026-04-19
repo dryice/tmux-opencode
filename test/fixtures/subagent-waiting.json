@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "sessionID": "sub-1",
+  "parentID": "root-1",
+  "kind": "subagent",
+  "title": "Subagent helper",
+  "status": "waiting",
+  "summary": "Permission required: shell",
+  "updatedAt": 4102444800000
+}
