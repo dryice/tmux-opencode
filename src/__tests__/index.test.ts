@@ -47,6 +47,30 @@ function idleEvent(sessionID: string) {
   }
 }
 
+function directStatusEvent(sessionID: string, status: "idle" | "busy" | "retry") {
+  return {
+    event: {
+      type: "session.status" as const,
+      properties: {
+        sessionID,
+        status,
+      },
+    },
+  }
+}
+
+function topLevelStatusEvent(sessionID: string, status: "idle" | "busy" | "retry") {
+  return {
+    event: {
+      type: "session.status" as const,
+      status,
+      properties: {
+        sessionID,
+      },
+    },
+  }
+}
+
 function unexpectedStatusEvent(sessionID: string) {
   return {
     event: {
@@ -200,7 +224,7 @@ describe("tmux-opencode plugin", () => {
     expect(client.session.get).not.toHaveBeenCalled()
   })
 
-  it("deletes the snapshot when session.status becomes idle", async () => {
+  it("writes an idle snapshot when session.status becomes idle", async () => {
     const client = makeClient()
     const hooks = await plugin({ client } as never)
 
@@ -208,10 +232,12 @@ describe("tmux-opencode plugin", () => {
     expect(existsSync(path.join(tmpDir, "ses-cleanup.json"))).toBe(true)
 
     await hooks.event!(idleEvent("ses-cleanup"))
-    expect(existsSync(path.join(tmpDir, "ses-cleanup.json"))).toBe(false)
+    const snap = readSnapshot(tmpDir, "ses-cleanup")
+    expect(snap.status).toBe("idle")
+    expect(snap.summary).toContain("idle")
   })
 
-  it("deletes the snapshot when a session.idle event arrives", async () => {
+  it("writes an idle snapshot when a session.idle event arrives", async () => {
     const client = makeClient()
     const hooks = await plugin({ client } as never)
 
@@ -219,7 +245,44 @@ describe("tmux-opencode plugin", () => {
     expect(existsSync(path.join(tmpDir, "ses-idle-event.json"))).toBe(true)
 
     await hooks.event!(sessionIdleEvent("ses-idle-event") as never)
-    expect(existsSync(path.join(tmpDir, "ses-idle-event.json"))).toBe(false)
+    const snap = readSnapshot(tmpDir, "ses-idle-event")
+    expect(snap.status).toBe("idle")
+    expect(snap.summary).toContain("idle")
+  })
+
+  it("normalizes direct string session.status payloads", async () => {
+    const client = makeClient({ title: "Direct status" })
+    const hooks = await plugin({ client } as never)
+
+    await hooks.event!(directStatusEvent("ses-direct", "busy") as never)
+    let snap = readSnapshot(tmpDir, "ses-direct")
+    expect(snap.status).toBe("working")
+    expect(snap.summary).toContain("busy")
+
+    await hooks.event!(directStatusEvent("ses-direct", "retry") as never)
+    snap = readSnapshot(tmpDir, "ses-direct")
+    expect(snap.status).toBe("working")
+    expect(snap.summary).toContain("busy")
+
+    await hooks.event!(directStatusEvent("ses-direct", "idle") as never)
+    snap = readSnapshot(tmpDir, "ses-direct")
+    expect(snap.status).toBe("idle")
+    expect(snap.summary).toContain("idle")
+  })
+
+  it("normalizes top-level session.status payloads", async () => {
+    const client = makeClient({ title: "Top level status" })
+    const hooks = await plugin({ client } as never)
+
+    await hooks.event!(topLevelStatusEvent("ses-top-level", "busy") as never)
+    let snap = readSnapshot(tmpDir, "ses-top-level")
+    expect(snap.status).toBe("working")
+    expect(snap.summary).toContain("busy")
+
+    await hooks.event!(topLevelStatusEvent("ses-top-level", "idle") as never)
+    snap = readSnapshot(tmpDir, "ses-top-level")
+    expect(snap.status).toBe("idle")
+    expect(snap.summary).toContain("idle")
   })
 
   it("deletes the snapshot when a session is deleted", async () => {
