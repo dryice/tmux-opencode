@@ -4,6 +4,7 @@
   "parentID": "root-1",
   "kind": "subagent",
   "title": "Subagent helper",
+  "projectName": "tmux-opencode",
   "status": "waiting",
   "summary": "Permission required: shell",
   "updatedAt": 4102444800000

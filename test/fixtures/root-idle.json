@@ -4,6 +4,7 @@
   "parentID": null,
   "kind": "root",
   "title": "Idle session",
+  "projectName": "my-app",
   "status": "idle",
   "summary": "Session is idle",
   "updatedAt": 4102444805000
