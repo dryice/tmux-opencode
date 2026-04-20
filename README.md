@@ -22,7 +22,7 @@ Install dependencies:
 npm install
 ```
 
-Run the TypeScript tests and typecheck:
+Run the TypeScript tests, typecheck, and build:
 
 ```bash
 npm test
@@ -51,9 +51,12 @@ The writer uses these snapshot fields:
 - `parentID`
 - `kind`
 - `title`
+- `projectName` (optional)
 - `status`
 - `summary`
 - `updatedAt`
+
+`projectName` is taken from the OpenCode project context when available. The plugin prefers `project.name` and falls back to the worktree folder name.
 
 To override the snapshot directory:
 
@@ -130,14 +133,38 @@ prefix + I
 
 The tmux entrypoint is `tmux-opencode.tmux`. It binds the configured key to `scripts/show_popup.sh`, which opens a tmux popup and runs `scripts/render_status.sh`.
 
+The popup renders one line per snapshot in this format:
+
+```text
+<status> <projectName> <title>
+```
+
+Subagents are prefixed with `- ` when shown.
+
+## Session lifecycle behavior
+
+- `session.created` writes an initial `idle` snapshot for the new session.
+- `session.status` with `busy` or `retry` writes `working`; `idle` writes `idle`.
+- `session.idle` also writes `idle`.
+- `question.asked` writes `question`.
+- `permission.asked` and the `permission.ask` hook write `waiting` with the permission type in the summary.
+- `tui.session.select` switches the visible root session for that plugin instance and writes an `idle` snapshot for the selected session.
+- `session.new` removes the current session snapshot before the replacement session is created.
+- `/exit` and other `*.exit` commands remove that session snapshot.
+- `session.deleted` removes the snapshot.
+- Message streaming events such as `message.part.delta` are ignored; status is driven by explicit session and permission events.
+
 ## Viewer behavior
 
 - By default, only root sessions are shown.
 - To include subagents, set `TMUX_OPENCODE_SHOW_SUBAGENTS=1` in the tmux environment before launching the popup.
 - Malformed snapshot files are ignored.
-- Session snapshots stay visible until OpenCode emits an idle or delete lifecycle event that removes them.
+- Idle sessions stay visible as `idle` rows until another event replaces or removes them.
+- Each plugin instance keeps one visible root session at a time; selecting another session or creating a new one replaces the prior visible root snapshot from that instance.
+- Snapshots from other running OpenCode instances are left alone until those instances explicitly update or remove them.
 - The popup stays open until you press a key.
 - If no valid snapshots exist, the popup shows `No active opencode sessions`.
+- The popup is a point-in-time snapshot taken when it opens; there is no live refresh.
 
 ## Manual smoke test
 

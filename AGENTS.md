@@ -31,12 +31,12 @@ OpenCode session lifecycle events
 
 | File | Purpose |
 |------|---------|
-| `src/index.ts` | Plugin entrypoint. Handles `event()` and `permission.ask()` hooks. Maps lifecycle events to snapshot write/delete. |
+| `src/index.ts` | Plugin entrypoint. Handles `event()`, `command.execute.before()`, and `permission.ask()` hooks. Maps OpenCode lifecycle/control events to snapshot write/delete and tracks the currently visible root session for that plugin instance. |
 | `src/types.ts` | `SessionSnapshot` interface, `SessionStatus` union (`working \| waiting \| question \| idle \| error`), `SessionKind` (`root \| subagent`), `STATUS_DIR_ENV_KEY`, `defaultStatusDirectory()`. |
 | `src/status-store.ts` | Filesystem operations: `writeSnapshot` (atomic via tmp+rename), `deleteSnapshot`, `listSnapshots`. |
-| `src/__tests__/index.test.ts` | 13 tests for plugin event handling. Uses vitest, writes to temp dirs via `TMUX_OPENCODE_STATUS_DIR`. |
-| `src/__tests__/status-store.test.ts` | 10 tests for snapshot store (atomic writes, deletion, listing, malformed file handling). |
-| `src/__tests__/types.test.ts` | 2 tests for constants. |
+| `src/__tests__/index.test.ts` | Vitest coverage for plugin event handling and visible-session behavior. Uses temp dirs via `TMUX_OPENCODE_STATUS_DIR`. |
+| `src/__tests__/status-store.test.ts` | Vitest coverage for snapshot store behavior, including atomic writes, deletion, directory creation, and malformed file handling. |
+| `src/__tests__/types.test.ts` | Vitest coverage for exported constants and default status-directory behavior. |
 
 ### tmux plugin (`scripts/`, root)
 
@@ -55,23 +55,38 @@ OpenCode session lifecycle events
 | `test/fixtures/root-working.json` | Test fixture: a root session in "working" state. |
 | `test/fixtures/subagent-waiting.json` | Test fixture: a subagent session in "waiting" state. |
 
-## Event → Status Mapping (src/index.ts)
+## Event → Snapshot Mapping (src/index.ts)
 
-The plugin only writes snapshots for these explicit lifecycle events:
+The plugin writes or deletes snapshots for both lifecycle events and a few control events that affect which session should stay visible in tmux:
 
-| Event | Action | Snapshot status |
-|-------|--------|----------------|
+| Event / Hook | Action | Snapshot status |
+|--------------|--------|----------------|
+| `session.created` | Write snapshot | `idle` |
+| `session.status` (busy) | Write/update snapshot | `working` |
+| `session.status` (retry) | Write/update snapshot | `working` |
+| `session.status` (idle) | Write/update snapshot | `idle` |
+| `session.idle` | Write/update snapshot | `idle` |
+| `question.asked` | Write/update snapshot | `question` |
+| `permission.asked` | Write/update snapshot | `waiting` |
+| `permission.ask` hook | Write/update snapshot | `waiting` |
+| `tui.session.select` | Replace previously visible root snapshot for this plugin instance, then write selected session snapshot | `idle` |
+| `command.execute.before` for `new` / `session.new` | Delete current session snapshot before replacement session appears | — |
+| `command.executed` for `exit` / `*.exit` | Delete that session snapshot | — |
 | `session.deleted` | Delete snapshot | — |
-| `session.idle` | Delete snapshot | — |
-| `session.status` (idle) | Delete snapshot | — |
-| `session.status` (busy) | Write snapshot | `working` |
-| `session.status` (retry) | Write snapshot | `working` |
-| `question.asked` | Write snapshot | `question` |
-| `permission.asked` | Write snapshot | `waiting` |
-| `permission.ask` hook | Write snapshot | `waiting` |
 | All other events | Ignored | — |
 
-**Important:** `message.updated`, `message.part.updated`, `message.part.delta`, `session.created`, and `session.updated` events are intentionally NOT handled. Previously they unconditionally wrote "working" snapshots, which caused stale "Session is busy" status when these events fired after the session had already gone idle.
+**Important:** idle does **not** delete the snapshot anymore. The current implementation keeps the session visible by rewriting it as `idle`.
+
+**Also important:** `message.updated`, `message.part.updated`, and `message.part.delta` are intentionally ignored so streaming output does not incorrectly force a session back to `working`.
+
+## Visible Session Model
+
+Each plugin instance tracks a single `visibleRootSessionID` in memory.
+
+- When a new root session is created, that plugin instance removes its previously visible root snapshot first.
+- When the user selects another session in the TUI, the plugin swaps the visible root snapshot to the selected session.
+- When `session.new` is invoked, the plugin removes the outgoing session snapshot before the replacement root session is created.
+- Snapshots created by other running plugin instances are not globally cleaned up.
 
 ## Snapshot Format
 
@@ -91,6 +106,7 @@ Each file is `${sessionID}.json` in the status directory:
 ```
 
 - `kind`: `"root"` when `parentID` is null/absent, `"subagent"` when `parentID` is set.
+- `projectName`: optional display name derived from the OpenCode project context (`project.name`, or the worktree folder name as fallback).
 - `updatedAt`: epoch milliseconds from `Date.now()`.
 - Write is atomic: writes to `.json.tmp`, then `rename()` to `.json`.
 
@@ -108,7 +124,7 @@ Each file is `${sessionID}.json` in the status directory:
 npm install          # Install dependencies
 npm run build        # Compile TypeScript src/ → dist/
 npm run typecheck    # Type-check without emitting
-npm test             # Run vitest suite (25 tests across 3 files)
+npm test             # Run vitest suites under src/__tests__
 bash test/render_status_test.sh  # Shell integration tests for popup renderer
 ```
 
@@ -129,7 +145,10 @@ Rebuild (`npm run build`) and restart OpenCode after changes.
 ## Key Design Decisions
 
 - **No polling:** The popup reads snapshots at open time only. There is no background refresh.
-- **No stale filtering:** Old snapshots remain until explicitly deleted by an idle/delete event. This is intentional — a session that stops emitting events stays visible.
+- **Idle sessions remain visible:** The plugin rewrites the current session as `idle` instead of deleting it.
+- **Visible-root replacement is local:** Each plugin instance keeps one visible root snapshot at a time and replaces it on session selection or root-session creation.
+- **No global stale filtering:** Snapshots from other plugin instances remain until those instances explicitly update or delete them.
 - **Atomic writes:** Snapshot files use tmp+rename to avoid partial reads.
 - **Malformed file tolerance:** Both the store's `listSnapshots` and the render script skip invalid JSON silently.
 - **Subagent filtering:** By default only root sessions appear in the popup. Set `TMUX_OPENCODE_SHOW_SUBAGENTS=1` to include subagents (prefixed with `-`).
+- **Renderer output:** The popup prints `status`, `projectName`, and `title`, sorted by `updatedAt` descending.
