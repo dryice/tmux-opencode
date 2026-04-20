@@ -36,17 +36,20 @@ if status_dir.exists():
         status = payload.get("status")
         title = payload.get("title")
         summary = payload.get("summary")
+        project_name = payload.get("projectName", "")
         if not isinstance(status, str) or not isinstance(title, str) or not isinstance(summary, str):
             continue
+        if not isinstance(project_name, str):
+            continue
 
-        rows.append((updated_at, kind, status, title, summary))
+        rows.append((updated_at, kind, status, project_name, title))
 
 rows.sort(key=lambda row: row[0], reverse=True)
 
 if not rows:
     print("No active opencode sessions")
 else:
-    for _, kind, status, title, summary in rows:
+    for _, kind, status, project_name, title in rows:
         prefix = "- " if kind == "subagent" else ""
-        print(f"{status:<8} {prefix}{title}  {summary}")
+        print(f"{status:<8} {project_name:<16} {prefix}{title}")
 PY

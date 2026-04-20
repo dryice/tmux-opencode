@@ -33,12 +33,15 @@ output="$(TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" bash "$ROOT_DIR/scripts/render_st
 assert_contains "$output" "Main session"
 assert_contains "$output" "Second session"
 assert_contains "$output" "Idle session"
-assert_contains "$output" "Session is idle"
+assert_contains "$output" "tmux-opencode"
+assert_contains "$output" "my-app"
+assert_not_contains "$output" "Session is idle"
 assert_not_contains "$output" "Subagent helper"
 
 output="$(TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" TMUX_OPENCODE_SHOW_SUBAGENTS=1 bash "$ROOT_DIR/scripts/render_status.sh")"
 assert_contains "$output" "Main session"
 assert_contains "$output" "Second session"
+assert_contains "$output" "tmux-opencode"
 assert_contains "$output" "- Subagent helper"
 
 printf '{broken json}\n' > "$WORK_DIR/broken.json"
@@ -74,6 +77,21 @@ cat > "$WORK_DIR/stale.json" <<'JSON'
 JSON
 output="$(TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" bash "$ROOT_DIR/scripts/render_status.sh")"
 assert_contains "$output" "Old session"
+
+cat > "$WORK_DIR/legacy.json" <<'JSON'
+{
+  "version": 1,
+  "sessionID": "legacy-1",
+  "parentID": null,
+  "kind": "root",
+  "title": "Legacy session",
+  "status": "working",
+  "summary": "Old format",
+  "updatedAt": 4102444802000
+}
+JSON
+output="$(TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" bash "$ROOT_DIR/scripts/render_status.sh")"
+assert_contains "$output" "Legacy session"
 
 EMPTY_DIR="$(mktemp -d "${TMPDIR:-/tmp}/tmux-opencode-empty.XXXXXX")"
 trap 'rm -rf "$WORK_DIR" "$EMPTY_DIR"' EXIT
