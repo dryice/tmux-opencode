@@ -26,11 +26,14 @@ assert_not_contains() {
 
 cp "$FIXTURE_DIR/root-working.json" "$WORK_DIR/root-working.json"
 cp "$FIXTURE_DIR/root-question.json" "$WORK_DIR/root-question.json"
+cp "$FIXTURE_DIR/root-idle.json" "$WORK_DIR/root-idle.json"
 cp "$FIXTURE_DIR/subagent-waiting.json" "$WORK_DIR/subagent-waiting.json"
 
 output="$(TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" bash "$ROOT_DIR/scripts/render_status.sh")"
 assert_contains "$output" "Main session"
 assert_contains "$output" "Second session"
+assert_contains "$output" "Idle session"
+assert_contains "$output" "Session is idle"
 assert_not_contains "$output" "Subagent helper"
 
 output="$(TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" TMUX_OPENCODE_SHOW_SUBAGENTS=1 bash "$ROOT_DIR/scripts/render_status.sh")"
