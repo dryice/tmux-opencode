@@ -5,20 +5,36 @@ import path from "node:path"
 import plugin from "../index"
 import { STATUS_DIR_ENV_KEY } from "../types"
 
-function makeClient(overrides: { title?: string; parentID?: string } = {}) {
+type SessionRecord = {
+  id: string
+  projectID: string
+  directory: string
+  title: string
+  parentID?: string
+  version: string
+  time: { created: number; updated: number }
+}
+
+function makeSession(sessionID: string, overrides: { title?: string; parentID?: string } = {}): SessionRecord {
+  return {
+    id: sessionID,
+    projectID: "proj-1",
+    directory: "/tmp",
+    title: overrides.title ?? "Main session",
+    parentID: overrides.parentID,
+    version: "1",
+    time: { created: 0, updated: 0 },
+  }
+}
+
+function makeClient(overrides: { title?: string; parentID?: string; sessions?: Record<string, SessionRecord> } = {}) {
+  const fallback = makeSession("test-id", overrides)
+
   return {
     session: {
-      get: vi.fn().mockResolvedValue({
-        data: {
-          id: "test-id",
-          projectID: "proj-1",
-          directory: "/tmp",
-          title: overrides.title ?? "Main session",
-          parentID: overrides.parentID,
-          version: "1",
-          time: { created: 0, updated: 0 },
-        },
-      }),
+      get: vi.fn().mockImplementation(async ({ path: { id } }: { path: { id: string } }) => ({
+        data: overrides.sessions?.[id] ?? { ...fallback, id },
+      })),
     },
   }
 }
@@ -119,6 +135,41 @@ function sessionDeletedInfoEvent(sessionID: string) {
   }
 }
 
+function sessionCreatedEvent(sessionID: string, title: string) {
+  return {
+    event: {
+      type: "session.created" as const,
+      properties: {
+        sessionID,
+        info: makeSession(sessionID, { title }),
+      },
+    },
+  }
+}
+
+function sessionSelectEvent(sessionID: string) {
+  return {
+    event: {
+      type: "tui.session.select" as const,
+      properties: { sessionID },
+    },
+  }
+}
+
+function commandExecutedEvent(sessionID: string, name: string) {
+  return {
+    event: {
+      type: "command.executed" as const,
+      properties: {
+        name,
+        sessionID,
+        arguments: "",
+        messageID: "msg-1",
+      },
+    },
+  }
+}
+
 function permissionAskedEvent(sessionID: string, permType: string) {
   return {
     event: {
@@ -159,6 +210,14 @@ function permissionInput(sessionID: string, permType: string) {
   }
 }
 
+function commandBeforeInput(sessionID: string, command: string, args = "") {
+  return {
+    command,
+    sessionID,
+    arguments: args,
+  }
+}
+
 function readSnapshot(dir: string, sessionID: string) {
   return JSON.parse(readFileSync(path.join(dir, `${sessionID}.json`), "utf8"))
 }
@@ -179,6 +238,7 @@ describe("tmux-opencode plugin", () => {
     const hooks = await plugin({ client: makeClient() } as never)
     expect(typeof hooks.event).toBe("function")
     expect(typeof hooks["permission.ask"]).toBe("function")
+    expect(typeof hooks["command.execute.before"]).toBe("function")
   })
 
   it("writes a working snapshot for session.status busy events", async () => {
@@ -377,5 +437,70 @@ describe("tmux-opencode plugin", () => {
     expect(existsSync(path.join(tmpDir, "ses-first.json"))).toBe(true)
     expect(readSnapshot(tmpDir, "ses-first").title).toBe("First session")
     expect(readSnapshot(tmpDir, "ses-second").title).toBe("Second session")
+  })
+
+  it("removes the previous snapshot and writes the new session after session.new", async () => {
+    const client = makeClient({
+      sessions: {
+        "ses-old": makeSession("ses-old", { title: "Old session" }),
+        "ses-new": makeSession("ses-new", { title: "New session" }),
+      },
+    })
+    const otherHooks = await plugin({ client: makeClient({ title: "Other instance" }) } as never)
+    const hooks = await plugin({ client } as never)
+
+    await otherHooks.event!(busyEvent("ses-other"))
+    await hooks.event!(busyEvent("ses-old"))
+    expect(existsSync(path.join(tmpDir, "ses-old.json"))).toBe(true)
+
+    await hooks["command.execute.before"]!(commandBeforeInput("ses-old", "session.new") as never, { parts: [] })
+
+    expect(existsSync(path.join(tmpDir, "ses-old.json"))).toBe(false)
+    expect(existsSync(path.join(tmpDir, "ses-other.json"))).toBe(true)
+
+    await hooks.event!(sessionCreatedEvent("ses-new", "New session") as never)
+
+    const snap = readSnapshot(tmpDir, "ses-new")
+    expect(snap.status).toBe("idle")
+    expect(snap.summary).toContain("idle")
+    expect(snap.title).toBe("New session")
+    expect(existsSync(path.join(tmpDir, "ses-other.json"))).toBe(true)
+  })
+
+  it("replaces the visible session snapshot when selecting another session", async () => {
+    const client = makeClient({
+      sessions: {
+        "ses-current": makeSession("ses-current", { title: "Current session" }),
+        "ses-selected": makeSession("ses-selected", { title: "Selected session" }),
+      },
+    })
+    const otherHooks = await plugin({ client: makeClient({ title: "Other instance" }) } as never)
+    const hooks = await plugin({ client } as never)
+
+    await otherHooks.event!(busyEvent("ses-other"))
+    await hooks.event!(busyEvent("ses-current"))
+
+    await hooks.event!(sessionSelectEvent("ses-selected") as never)
+
+    expect(existsSync(path.join(tmpDir, "ses-current.json"))).toBe(false)
+    expect(existsSync(path.join(tmpDir, "ses-other.json"))).toBe(true)
+
+    const snap = readSnapshot(tmpDir, "ses-selected")
+    expect(snap.status).toBe("idle")
+    expect(snap.summary).toContain("idle")
+    expect(snap.title).toBe("Selected session")
+  })
+
+  it("deletes only the local session snapshot for an exit command", async () => {
+    const hooks = await plugin({ client: makeClient({ title: "Exiting session" }) } as never)
+    const otherHooks = await plugin({ client: makeClient({ title: "Other instance" }) } as never)
+
+    await hooks.event!(busyEvent("ses-exit"))
+    await otherHooks.event!(busyEvent("ses-other"))
+
+    await hooks.event!(commandExecutedEvent("ses-exit", "/exit") as never)
+
+    expect(existsSync(path.join(tmpDir, "ses-exit.json"))).toBe(false)
+    expect(existsSync(path.join(tmpDir, "ses-other.json"))).toBe(true)
   })
 })

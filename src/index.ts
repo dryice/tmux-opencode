@@ -10,14 +10,24 @@ function directory(): string {
 type PluginEvent = {
   type: string
   status?: string | { type?: string }
+  command?: string
   properties?: {
     sessionID?: string
     info?: {
       id?: string
+      parentID?: string
+      title?: string
     }
     status?: string | { type?: string }
     type?: string
+    command?: string
+    name?: string
   }
+}
+
+type SessionInfo = {
+  parentID?: string
+  title: string
 }
 
 function eventSessionID(event: PluginEvent): string | undefined {
@@ -34,15 +44,16 @@ async function readSession(client: { session: { get: (input: { path: { id: strin
   return details.data
 }
 
-async function writeCurrentSnapshot(
-  client: { session: { get: (input: { path: { id: string } }) => Promise<{ data?: { parentID?: string; title: string } | null }> } },
+function isRootSession(session: SessionInfo): boolean {
+  return !session.parentID
+}
+
+async function writeSnapshotForSession(
   sessionID: string,
+  session: SessionInfo,
   status: SessionSnapshot["status"],
   summary: string,
 ) {
-  const session = await readSession(client, sessionID)
-  if (!session) return
-
   await writeSnapshot(directory(), {
     version: 1,
     sessionID,
@@ -55,22 +66,116 @@ async function writeCurrentSnapshot(
   })
 }
 
+async function writeCurrentSnapshot(
+  client: { session: { get: (input: { path: { id: string } }) => Promise<{ data?: { parentID?: string; title: string } | null }> } },
+  sessionID: string,
+  status: SessionSnapshot["status"],
+  summary: string,
+) {
+  const session = await readSession(client, sessionID)
+  if (!session) return null
+
+  await writeSnapshotForSession(sessionID, session, status, summary)
+  return session
+}
+
+function normalizeCommand(command: string | undefined): string | undefined {
+  return command?.trim().replace(/^\//, "").toLowerCase()
+}
+
+function eventCommand(event: PluginEvent): string | undefined {
+  return normalizeCommand(event.properties?.command ?? event.command ?? event.properties?.name)
+}
+
+function isNewSessionCommand(command: string | undefined): boolean {
+  const normalized = normalizeCommand(command)
+  return normalized === "new" || normalized === "session.new"
+}
+
+function isExitCommand(command: string | undefined): boolean {
+  const normalized = normalizeCommand(command)
+  return normalized === "exit" || normalized?.endsWith(".exit") === true
+}
+
 const plugin: Plugin = async ({ client }) => {
+  let visibleRootSessionID: string | undefined
+
+  async function rememberVisibleRootSnapshot(
+    sessionID: string,
+    status: SessionSnapshot["status"],
+    summary: string,
+  ) {
+    const session = await writeCurrentSnapshot(client, sessionID, status, summary)
+    if (session && isRootSession(session)) {
+      visibleRootSessionID = sessionID
+    }
+  }
+
+  async function showVisibleSession(sessionID: string) {
+    if (visibleRootSessionID && visibleRootSessionID !== sessionID) {
+      await deleteSnapshot(directory(), visibleRootSessionID)
+    }
+
+    const session = await readSession(client, sessionID)
+    if (!session) return
+
+    await writeSnapshotForSession(sessionID, session, "idle", "Session is idle")
+    visibleRootSessionID = isRootSession(session) ? sessionID : visibleRootSessionID
+  }
+
+  async function removeVisibleSession(sessionID: string) {
+    await deleteSnapshot(directory(), sessionID)
+    if (visibleRootSessionID === sessionID) {
+      visibleRootSessionID = undefined
+    }
+  }
+
   return {
     async event(input) {
       const event = input.event as PluginEvent
       const sessionID = eventSessionID(event)
+
+      if (event.type === "tui.session.select" && sessionID) {
+        await showVisibleSession(sessionID)
+        return
+      }
+
+      if (event.type === "command.executed" && sessionID && isExitCommand(eventCommand(event))) {
+        await removeVisibleSession(sessionID)
+        return
+      }
+
+      if (event.type === "session.created" && sessionID) {
+        const info = event.properties?.info
+        if (!info?.title) return
+
+        const session: SessionInfo = {
+          title: info.title,
+          parentID: info.parentID,
+        }
+
+        if (visibleRootSessionID && visibleRootSessionID !== sessionID && isRootSession(session)) {
+          await deleteSnapshot(directory(), visibleRootSessionID)
+        }
+
+        await writeSnapshotForSession(sessionID, session, "idle", "Session is idle")
+        if (isRootSession(session)) {
+          visibleRootSessionID = sessionID
+        }
+        return
+      }
+
       if (!sessionID) {
         return
       }
 
       if (event.type === "session.deleted") {
-        await deleteSnapshot(directory(), sessionID)
+        await removeVisibleSession(sessionID)
         return
       }
 
       if (event.type === "session.idle") {
-        await writeCurrentSnapshot(client, sessionID, "idle", "Session is idle")
+        await rememberVisibleRootSnapshot(sessionID, "idle", "Session is idle")
         return
       }
 
@@ -78,30 +183,38 @@ const plugin: Plugin = async ({ client }) => {
         const status = eventStatusType(event)
 
         if (status === "idle") {
-          await writeCurrentSnapshot(client, sessionID, "idle", "Session is idle")
+          await rememberVisibleRootSnapshot(sessionID, "idle", "Session is idle")
           return
         }
 
         if (status === "busy" || status === "retry") {
-          await writeCurrentSnapshot(client, sessionID, "working", "Session is busy")
+          await rememberVisibleRootSnapshot(sessionID, "working", "Session is busy")
         }
 
         return
       }
 
       if (event.type === "question.asked") {
-        await writeCurrentSnapshot(client, sessionID, "question", "Question asked")
+        await rememberVisibleRootSnapshot(sessionID, "question", "Question asked")
         return
       }
 
       if (event.type === "permission.asked") {
-        await writeCurrentSnapshot(client, sessionID, "waiting", `Permission required: ${event.properties?.type ?? "unknown"}`)
+        await rememberVisibleRootSnapshot(sessionID, "waiting", `Permission required: ${event.properties?.type ?? "unknown"}`)
         return
       }
     },
 
+    async "command.execute.before"(input) {
+      if (!isNewSessionCommand(input.command)) {
+        return
+      }
+
+      await removeVisibleSession(input.sessionID)
+    },
+
     async "permission.ask"(input) {
-      await writeCurrentSnapshot(client, input.sessionID, "waiting", `Permission required: ${input.type}`)
+      await rememberVisibleRootSnapshot(input.sessionID, "waiting", `Permission required: ${input.type}`)
     },
   }
 }
