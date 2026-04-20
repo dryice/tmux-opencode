@@ -253,6 +253,30 @@ describe("tmux-opencode plugin", () => {
     expect(snap.summary).toContain("busy")
   })
 
+  it("includes projectName from plugin project context", async () => {
+    const client = makeClient({ title: "Coding task" })
+    const hooks = await plugin({
+      client,
+      project: { name: "my-project", worktree: "/tmp/my-project" },
+    } as never)
+    await hooks.event!(busyEvent("ses-project"))
+
+    const snap = readSnapshot(tmpDir, "ses-project")
+    expect(snap.projectName).toBe("my-project")
+  })
+
+  it("falls back to the worktree folder name when project.name is missing", async () => {
+    const client = makeClient({ title: "Coding task" })
+    const hooks = await plugin({
+      client,
+      project: { worktree: "/tmp/fallback-project" },
+    } as never)
+    await hooks.event!(busyEvent("ses-project-fallback"))
+
+    const snap = readSnapshot(tmpDir, "ses-project-fallback")
+    expect(snap.projectName).toBe("fallback-project")
+  })
+
   it("writes a question snapshot for question.asked events", async () => {
     const client = makeClient({ title: "Asking" })
     const hooks = await plugin({ client } as never)

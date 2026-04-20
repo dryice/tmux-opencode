@@ -12,6 +12,7 @@ export interface SessionSnapshot {
   parentID: string | null
   kind: SessionKind
   title: string
+  projectName?: string
   status: SessionStatus
   summary: string
   updatedAt: number

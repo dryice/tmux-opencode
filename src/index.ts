@@ -1,4 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin"
+import path from "node:path"
 import { defaultStatusDirectory, STATUS_DIR_ENV_KEY } from "./types"
 import type { SessionSnapshot } from "./types"
 import { deleteSnapshot, writeSnapshot } from "./status-store"
@@ -30,6 +31,11 @@ type SessionInfo = {
   title: string
 }
 
+type ProjectInfo = {
+  name?: string
+  worktree?: string
+}
+
 function eventSessionID(event: PluginEvent): string | undefined {
   return event.properties?.sessionID ?? event.properties?.info?.id
 }
@@ -53,6 +59,7 @@ async function writeSnapshotForSession(
   session: SessionInfo,
   status: SessionSnapshot["status"],
   summary: string,
+  projectName?: string,
 ) {
   await writeSnapshot(directory(), {
     version: 1,
@@ -60,6 +67,7 @@ async function writeSnapshotForSession(
     parentID: session.parentID ?? null,
     kind: session.parentID ? "subagent" : "root",
     title: session.title,
+    projectName,
     status,
     summary,
     updatedAt: Date.now(),
@@ -71,12 +79,26 @@ async function writeCurrentSnapshot(
   sessionID: string,
   status: SessionSnapshot["status"],
   summary: string,
+  projectName?: string,
 ) {
   const session = await readSession(client, sessionID)
   if (!session) return null
 
-  await writeSnapshotForSession(sessionID, session, status, summary)
+  await writeSnapshotForSession(sessionID, session, status, summary, projectName)
   return session
+}
+
+function deriveProjectName(project: ProjectInfo | undefined): string | undefined {
+  const explicitName = project?.name?.trim()
+  if (explicitName) {
+    return explicitName
+  }
+
+  if (!project?.worktree) {
+    return undefined
+  }
+
+  return path.basename(project.worktree)
 }
 
 function normalizeCommand(command: string | undefined): string | undefined {
@@ -97,15 +119,16 @@ function isExitCommand(command: string | undefined): boolean {
   return normalized === "exit" || normalized?.endsWith(".exit") === true
 }
 
-const plugin: Plugin = async ({ client }) => {
+const plugin: Plugin = async ({ client, project }) => {
   let visibleRootSessionID: string | undefined
+  const projectName = deriveProjectName(project)
 
   async function rememberVisibleRootSnapshot(
     sessionID: string,
     status: SessionSnapshot["status"],
     summary: string,
   ) {
-    const session = await writeCurrentSnapshot(client, sessionID, status, summary)
+    const session = await writeCurrentSnapshot(client, sessionID, status, summary, projectName)
     if (session && isRootSession(session)) {
       visibleRootSessionID = sessionID
     }
@@ -119,7 +142,7 @@ const plugin: Plugin = async ({ client }) => {
     const session = await readSession(client, sessionID)
     if (!session) return
 
-    await writeSnapshotForSession(sessionID, session, "idle", "Session is idle")
+    await writeSnapshotForSession(sessionID, session, "idle", "Session is idle", projectName)
     visibleRootSessionID = isRootSession(session) ? sessionID : visibleRootSessionID
   }
 
@@ -158,7 +181,7 @@ const plugin: Plugin = async ({ client }) => {
           await deleteSnapshot(directory(), visibleRootSessionID)
         }
 
-        await writeSnapshotForSession(sessionID, session, "idle", "Session is idle")
+        await writeSnapshotForSession(sessionID, session, "idle", "Session is idle", projectName)
         if (isRootSession(session)) {
           visibleRootSessionID = sessionID
         }
