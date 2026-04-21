@@ -4,7 +4,7 @@ set -euo pipefail
 status_dir="${TMUX_OPENCODE_STATUS_DIR:-${TMPDIR:-/tmp}/opencode-status}"
 show_subagents="${TMUX_OPENCODE_SHOW_SUBAGENTS:-0}"
 
-STATUS_DIR="$status_dir" SHOW_SUBAGENTS="$show_subagents" python3 <<'PY'
+PYTHONIOENCODING=utf-8 STATUS_DIR="$status_dir" SHOW_SUBAGENTS="$show_subagents" python3 <<'PY'
 import json
 import os
 from pathlib import Path
@@ -12,6 +12,13 @@ from pathlib import Path
 status_dir = Path(os.environ["STATUS_DIR"])
 show_subagents = os.environ.get("SHOW_SUBAGENTS") == "1"
 rows = []
+status_glyphs = {
+    "working": "●",
+    "waiting": "…",
+    "question": "?",
+    "idle": "○",
+    "error": "×",
+}
 
 if status_dir.exists():
     for path in sorted(status_dir.glob("*.json")):
@@ -50,6 +57,8 @@ if not rows:
     print("No active opencode sessions")
 else:
     for _, kind, status, project_name, title in rows:
+        glyph = status_glyphs.get(status, "•")
+        status_label = f"{glyph} {status}"
         prefix = "- " if kind == "subagent" else ""
-        print(f"{status:<8} {project_name:<16} {prefix}{title}")
+        print(f"{status_label:<12}  {project_name:<16}  {prefix}{title}")
 PY
