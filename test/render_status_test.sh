@@ -29,20 +29,49 @@ cp "$FIXTURE_DIR/root-question.json" "$WORK_DIR/root-question.json"
 cp "$FIXTURE_DIR/root-idle.json" "$WORK_DIR/root-idle.json"
 cp "$FIXTURE_DIR/subagent-waiting.json" "$WORK_DIR/subagent-waiting.json"
 
+cat > "$WORK_DIR/root-error.json" <<'JSON'
+{
+  "version": 1,
+  "sessionID": "root-error",
+  "parentID": null,
+  "kind": "root",
+  "title": "Broken session",
+  "projectName": "tmux-opencode",
+  "status": "error",
+  "summary": "Renderer failure",
+  "updatedAt": 4102444806000
+}
+JSON
+
+cat > "$WORK_DIR/root-custom.json" <<'JSON'
+{
+  "version": 1,
+  "sessionID": "root-custom",
+  "parentID": null,
+  "kind": "root",
+  "title": "Custom session",
+  "projectName": "odd-app",
+  "status": "custom",
+  "summary": "Custom state",
+  "updatedAt": 4102444807000
+}
+JSON
+
 output="$(TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" bash "$ROOT_DIR/scripts/render_status.sh")"
-assert_contains "$output" "Main session"
-assert_contains "$output" "Second session"
-assert_contains "$output" "Idle session"
+assert_contains "$output" "• custom      odd-app           Custom session"
+assert_contains "$output" "× error       tmux-opencode     Broken session"
+assert_contains "$output" "○ idle        my-app            Idle session"
+assert_contains "$output" "? question    tmux-opencode     Second session"
+assert_contains "$output" "● working     tmux-opencode     Main session"
 assert_contains "$output" "tmux-opencode"
 assert_contains "$output" "my-app"
 assert_not_contains "$output" "Session is idle"
 assert_not_contains "$output" "Subagent helper"
 
 output="$(TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" TMUX_OPENCODE_SHOW_SUBAGENTS=1 bash "$ROOT_DIR/scripts/render_status.sh")"
-assert_contains "$output" "Main session"
-assert_contains "$output" "Second session"
-assert_contains "$output" "tmux-opencode"
-assert_contains "$output" "- Subagent helper"
+assert_contains "$output" "… waiting     tmux-opencode     - Subagent helper"
+assert_contains "$output" "● working     tmux-opencode     Main session"
+assert_contains "$output" "? question    tmux-opencode     Second session"
 
 printf '{broken json}\n' > "$WORK_DIR/broken.json"
 output="$(TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" bash "$ROOT_DIR/scripts/render_status.sh")"
