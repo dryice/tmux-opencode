@@ -15,6 +15,6 @@ get_tmux_option() {
   fi
 }
 
-key="$(get_tmux_option "@opencode-key" "O")"
+key="$(get_tmux_option "@opencode-key" "o")"
 quoted_popup_script="$(printf '%q' "$CURRENT_DIR/scripts/show_popup.sh")"
 tmux bind-key "$key" run-shell "bash $quoted_popup_script"
