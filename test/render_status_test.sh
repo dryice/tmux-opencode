@@ -58,20 +58,26 @@ cat > "$WORK_DIR/root-custom.json" <<'JSON'
 JSON
 
 output="$(TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" bash "$ROOT_DIR/scripts/render_status.sh")"
-assert_contains "$output" "• custom      odd-app           Custom session"
-assert_contains "$output" "× error       tmux-opencode     Broken session"
-assert_contains "$output" "○ idle        my-app            Idle session"
-assert_contains "$output" "? question    tmux-opencode     Second session"
-assert_contains "$output" "● working     tmux-opencode     Main session"
+assert_contains "$output" "• custom"
+assert_contains "$output" "× error"
+assert_contains "$output" "○ idle"
+assert_contains "$output" "? question"
+assert_contains "$output" "● working"
+assert_contains "$output" "Custom session"
+assert_contains "$output" "Broken session"
+assert_contains "$output" "Idle session"
+assert_contains "$output" "Second session"
+assert_contains "$output" "Main session"
 assert_contains "$output" "tmux-opencode"
 assert_contains "$output" "my-app"
 assert_not_contains "$output" "Session is idle"
 assert_not_contains "$output" "Subagent helper"
 
 output="$(TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" TMUX_OPENCODE_SHOW_SUBAGENTS=1 bash "$ROOT_DIR/scripts/render_status.sh")"
-assert_contains "$output" "… waiting     tmux-opencode     - Subagent helper"
-assert_contains "$output" "● working     tmux-opencode     Main session"
-assert_contains "$output" "? question    tmux-opencode     Second session"
+assert_contains "$output" "… waiting"
+assert_contains "$output" "- Subagent helper"
+assert_contains "$output" "● working"
+assert_contains "$output" "? question"
 
 printf '{broken json}\n' > "$WORK_DIR/broken.json"
 output="$(TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" bash "$ROOT_DIR/scripts/render_status.sh")"
@@ -121,6 +127,64 @@ cat > "$WORK_DIR/legacy.json" <<'JSON'
 JSON
 output="$(TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" bash "$ROOT_DIR/scripts/render_status.sh")"
 assert_contains "$output" "Legacy session"
+
+LONG_PROJECT_NAME="12345678901234567890123456789012345extra-tail"
+TRUNCATED_PROJECT_NAME="${LONG_PROJECT_NAME:0:35}"
+
+cat > "$WORK_DIR/long-project.json" <<JSON
+{
+  "version": 1,
+  "sessionID": "long-project-1",
+  "parentID": null,
+  "kind": "root",
+  "title": "Long project title",
+  "projectName": "$LONG_PROJECT_NAME",
+  "status": "working",
+  "summary": "Long project name",
+  "updatedAt": 4102444803000
+}
+JSON
+
+cat > "$WORK_DIR/short-project.json" <<'JSON'
+{
+  "version": 1,
+  "sessionID": "short-project-1",
+  "parentID": null,
+  "kind": "root",
+  "title": "Short project title",
+  "projectName": "my-app",
+  "status": "working",
+  "summary": "Short project name",
+  "updatedAt": 4102444804000
+}
+JSON
+
+output="$(TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" bash "$ROOT_DIR/scripts/render_status.sh")"
+assert_contains "$output" "$TRUNCATED_PROJECT_NAME"
+assert_not_contains "$output" "$LONG_PROJECT_NAME"
+
+OUTPUT="$output" python3 <<'PY'
+import os
+import sys
+
+output = os.environ["OUTPUT"].splitlines()
+long_line = next(line for line in output if "Long project title" in line)
+short_line = next(line for line in output if "Short project title" in line)
+
+long_title_index = long_line.index("Long project title")
+short_title_index = short_line.index("Short project title")
+
+if long_title_index != short_title_index:
+    print(
+        "Expected aligned title column for long and short project names\n"
+        f"Long line:  {long_line}\n"
+        f"Short line: {short_line}\n"
+        f"Long title index: {long_title_index}\n"
+        f"Short title index: {short_title_index}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+PY
 
 EMPTY_DIR="$(mktemp -d "${TMPDIR:-/tmp}/tmux-opencode-empty.XXXXXX")"
 trap 'rm -rf "$WORK_DIR" "$EMPTY_DIR"' EXIT
