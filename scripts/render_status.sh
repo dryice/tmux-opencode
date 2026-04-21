@@ -4,7 +4,7 @@ set -euo pipefail
 status_dir="${TMUX_OPENCODE_STATUS_DIR:-${TMPDIR:-/tmp}/opencode-status}"
 show_subagents="${TMUX_OPENCODE_SHOW_SUBAGENTS:-0}"
 
-STATUS_DIR="$status_dir" SHOW_SUBAGENTS="$show_subagents" python3 <<'PY'
+PYTHONIOENCODING=utf-8 STATUS_DIR="$status_dir" SHOW_SUBAGENTS="$show_subagents" python3 <<'PY'
 import json
 import os
 from pathlib import Path
