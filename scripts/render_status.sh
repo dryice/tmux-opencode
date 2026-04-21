@@ -9,6 +9,8 @@ import json
 import os
 from pathlib import Path
 
+PROJECT_NAME_WIDTH = 35
+
 status_dir = Path(os.environ["STATUS_DIR"])
 show_subagents = os.environ.get("SHOW_SUBAGENTS") == "1"
 rows = []
@@ -60,5 +62,6 @@ else:
         glyph = status_glyphs.get(status, "•")
         status_label = f"{glyph} {status}"
         prefix = "- " if kind == "subagent" else ""
-        print(f"{status_label:<12}  {project_name:<16}  {prefix}{title}")
+        display_project_name = project_name[:PROJECT_NAME_WIDTH]
+        print(f"{status_label:<12}  {display_project_name:<{PROJECT_NAME_WIDTH}}  {prefix}{title}")
 PY
