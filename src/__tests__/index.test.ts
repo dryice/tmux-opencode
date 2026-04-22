@@ -313,6 +313,22 @@ describe("tmux-opencode plugin", () => {
     })
   })
 
+  it("does not rename the tmux window again when the desired root title is unchanged", async () => {
+    resolveTmuxContextMock.mockResolvedValue({
+      tmuxSessionID: "$3",
+      tmuxWindowID: "@4",
+      tmuxPaneID: "%5",
+    })
+
+    const client = makeClient({ title: "Main session" })
+    const hooks = await plugin({ client, project: { name: "tmux-opencode", worktree: "/tmp/tmux-opencode" } } as never)
+
+    await hooks.event!(busyEvent("ses-root-rename-once"))
+    await hooks.event!(idleEvent("ses-root-rename-once"))
+
+    expect(renameTmuxWindowMock).toHaveBeenCalledTimes(1)
+  })
+
   it("does not rename the tmux window for subagent sessions", async () => {
     resolveTmuxContextMock.mockResolvedValue({
       tmuxSessionID: "$3",
