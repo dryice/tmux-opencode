@@ -52,7 +52,7 @@ describe("tmux helpers", () => {
     expect(execFileMock).not.toHaveBeenCalled()
   })
 
-  it("renames the tmux window for human-readable context", async () => {
+  it("renames the tmux window with a sanitized human-readable context", async () => {
     execFileMock.mockImplementation(
       (_file: string, _args: string[], callback: (error: Error | null, stdout: string, stderr: string) => void) => {
         callback(null, "", "")
@@ -61,7 +61,7 @@ describe("tmux helpers", () => {
 
     const { renameTmuxWindow } = await import(tmuxModulePath)
 
-    await renameTmuxWindow({ tmuxWindowID: "@9", projectName: "tmux-opencode", sessionTitle: "Main session" })
+    await renameTmuxWindow({ tmuxWindowID: "@9", projectName: "tmux-opencode\t", sessionTitle: "Main\nsession" })
 
     expect(execFileMock).toHaveBeenCalledWith(
       "tmux",

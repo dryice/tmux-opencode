@@ -6,6 +6,15 @@ export type TmuxContext = {
   tmuxPaneID: string
 }
 
+function sanitizeTmuxWindowNamePart(value: string, maxLength: number): string {
+  return value
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/[\x00-\x1F\x7F]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength)
+}
+
 function execTmux(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile("tmux", args, (error, stdout) => {
@@ -44,8 +53,15 @@ export async function renameTmuxWindow(input: {
   projectName: string
   sessionTitle: string
 }): Promise<void> {
+  const projectName = sanitizeTmuxWindowNamePart(input.projectName, 80)
+  const sessionTitle = sanitizeTmuxWindowNamePart(input.sessionTitle, 80)
+  const windowName = sanitizeTmuxWindowNamePart(`${projectName}-${sessionTitle}`, 160)
+  if (!windowName) {
+    return
+  }
+
   try {
-    await execTmux(["rename-window", "-t", input.tmuxWindowID, `${input.projectName}-${input.sessionTitle}`])
+    await execTmux(["rename-window", "-t", input.tmuxWindowID, windowName])
   } catch {
     return
   }
