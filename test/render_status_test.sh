@@ -468,8 +468,14 @@ rm -f "$INTERACTIVE_DIR/logs/fzf-stdin.txt" "$INTERACTIVE_DIR/logs/fzf-args.txt"
 missing_fzf_dir="$(mktemp -d "${TMPDIR:-/tmp}/tmux-opencode-missing-fzf.XXXXXX")"
 trap 'rm -rf "$WORK_DIR" "$EMPTY_DIR" "$missing_fzf_dir"' EXIT
 
+ln -sf "$(command -v bash)" "$missing_fzf_dir/bash"
+ln -sf "$(command -v dirname)" "$missing_fzf_dir/dirname"
+
+assert_file_exists "$missing_fzf_dir/bash"
+assert_file_exists "$missing_fzf_dir/dirname"
+
 set +e
-missing_fzf_output="$(PATH="$missing_fzf_dir:/usr/bin:/bin" TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" bash "$ROOT_DIR/scripts/popup_command.sh" 2>&1 <<< 'x')"
+missing_fzf_output="$(PATH="$missing_fzf_dir" TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" bash "$ROOT_DIR/scripts/popup_command.sh" 2>&1 <<< 'x')"
 missing_fzf_status=$?
 set -e
 
