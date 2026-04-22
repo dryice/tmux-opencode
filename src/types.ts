@@ -13,6 +13,9 @@ export interface SessionSnapshot {
   kind: SessionKind
   title: string
   projectName?: string
+  tmuxSessionID?: string
+  tmuxWindowID?: string
+  tmuxPaneID?: string
   status: SessionStatus
   summary: string
   updatedAt: number

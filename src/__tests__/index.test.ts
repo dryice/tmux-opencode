@@ -5,6 +5,16 @@ import path from "node:path"
 import plugin from "../index"
 import { STATUS_DIR_ENV_KEY } from "../types"
 
+const { resolveTmuxContextMock, renameTmuxWindowMock } = vi.hoisted(() => ({
+  resolveTmuxContextMock: vi.fn(),
+  renameTmuxWindowMock: vi.fn(),
+}))
+
+vi.mock("../tmux", () => ({
+  resolveTmuxContext: resolveTmuxContextMock,
+  renameTmuxWindow: renameTmuxWindowMock,
+}))
+
 type SessionRecord = {
   id: string
   projectID: string
@@ -228,6 +238,9 @@ describe("tmux-opencode plugin", () => {
   beforeEach(() => {
     tmpDir = mkdtempSync(path.join(os.tmpdir(), "tmux-opencode-plugin-"))
     process.env[STATUS_DIR_ENV_KEY] = tmpDir
+    resolveTmuxContextMock.mockReset()
+    renameTmuxWindowMock.mockReset()
+    resolveTmuxContextMock.mockResolvedValue(null)
   })
 
   afterEach(() => {
@@ -263,6 +276,55 @@ describe("tmux-opencode plugin", () => {
 
     const snap = readSnapshot(tmpDir, "ses-project")
     expect(snap.projectName).toBe("my-project")
+  })
+
+  it("writes tmux ids into snapshots when tmux context is available", async () => {
+    resolveTmuxContextMock.mockResolvedValue({
+      tmuxSessionID: "$3",
+      tmuxWindowID: "@4",
+      tmuxPaneID: "%5",
+    })
+
+    const client = makeClient({ title: "Coding task" })
+    const hooks = await plugin({ client, project: { name: "my-project", worktree: "/tmp/my-project" } } as never)
+    await hooks.event!(busyEvent("ses-tmux"))
+
+    const snap = readSnapshot(tmpDir, "ses-tmux")
+    expect(snap.tmuxSessionID).toBe("$3")
+    expect(snap.tmuxWindowID).toBe("@4")
+    expect(snap.tmuxPaneID).toBe("%5")
+  })
+
+  it("renames the tmux window for root sessions when tmux context is available", async () => {
+    resolveTmuxContextMock.mockResolvedValue({
+      tmuxSessionID: "$3",
+      tmuxWindowID: "@4",
+      tmuxPaneID: "%5",
+    })
+
+    const client = makeClient({ title: "Main session" })
+    const hooks = await plugin({ client, project: { name: "tmux-opencode", worktree: "/tmp/tmux-opencode" } } as never)
+    await hooks.event!(busyEvent("ses-root-rename"))
+
+    expect(renameTmuxWindowMock).toHaveBeenCalledWith({
+      tmuxWindowID: "@4",
+      projectName: "tmux-opencode",
+      sessionTitle: "Main session",
+    })
+  })
+
+  it("does not rename the tmux window for subagent sessions", async () => {
+    resolveTmuxContextMock.mockResolvedValue({
+      tmuxSessionID: "$3",
+      tmuxWindowID: "@4",
+      tmuxPaneID: "%5",
+    })
+
+    const client = makeClient({ parentID: "parent-1", title: "Subagent helper" })
+    const hooks = await plugin({ client, project: { name: "tmux-opencode", worktree: "/tmp/tmux-opencode" } } as never)
+    await hooks.event!(busyEvent("ses-subagent"))
+
+    expect(renameTmuxWindowMock).not.toHaveBeenCalled()
   })
 
   it("falls back to the worktree folder name when project.name is missing", async () => {
