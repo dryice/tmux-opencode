@@ -2,20 +2,31 @@
 set -euo pipefail
 
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+delimiter=$'\t'
 
 if ! command -v fzf >/dev/null 2>&1; then
   printf 'fzf is required for popup selection\n' >&2
   exit 1
 fi
 
-selection=""
 set +e
 machine_output="$(TMUX_OPENCODE_RENDER_MODE=machine bash "$CURRENT_DIR/render_status.sh")"
+render_status_status=$?
+set -e
+
+if [[ $render_status_status -ne 0 ]]; then
+  printf 'render_status.sh failed with exit code %s\n' "$render_status_status" >&2
+  exit "$render_status_status"
+fi
+
 if [[ -z "$machine_output" ]]; then
+  printf 'No active opencode sessions\n'
   exit 0
 fi
 
-selection="$(printf '%s\n' "$machine_output" | fzf --delimiter=$'\t' --nth=4,5 --with-nth=4,5)"
+selection=""
+set +e
+selection="$(printf '%s\n' "$machine_output" | fzf "--delimiter=$delimiter" --nth=4,5 --with-nth=4,5)"
 status=$?
 set -e
 

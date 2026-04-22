@@ -32,6 +32,14 @@ assert_file_exists() {
   fi
 }
 
+assert_file_not_exists() {
+  local path="$1"
+  if [[ -f "$path" ]]; then
+    printf 'Expected file NOT to exist: %s\n' "$path" >&2
+    exit 1
+  fi
+}
+
 assert_no_tmux_calls() {
   local calls_file="$1"
   local calls=""
@@ -74,7 +82,35 @@ if calls != expected:
 PY
 }
 
-cp "$FIXTURE_DIR/root-working.json" "$WORK_DIR/root-working.json"
+assert_fzf_delimiter_arg() {
+  local args_file="$1"
+
+  python3 - "$args_file" <<'PY'
+import sys
+from pathlib import Path
+
+args = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+delimiter_args = [arg for arg in args if arg.startswith("--delimiter=")]
+
+if len(delimiter_args) != 1:
+    print(
+        "Expected exactly one --delimiter argument\n"
+        f"Actual args: {args}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+delimiter_arg = delimiter_args[0]
+if len(delimiter_arg) <= len("--delimiter="):
+    print(
+        "Expected --delimiter to include a non-empty delimiter value\n"
+        f"Actual arg: {delimiter_arg!r}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+PY
+}
+
 cp "$FIXTURE_DIR/root-question.json" "$WORK_DIR/root-question.json"
 cp "$FIXTURE_DIR/root-idle.json" "$WORK_DIR/root-idle.json"
 cp "$FIXTURE_DIR/subagent-waiting.json" "$WORK_DIR/subagent-waiting.json"
@@ -362,7 +398,7 @@ args_file="$log_dir/fzf-args.txt"
 selection_file="$log_dir/fzf-selection.txt"
 
 cat > "$input_file"
-printf '%s\n' "$*" > "$args_file"
+printf '%s\n' "$@" > "$args_file"
 if [[ -n "${FZF_SELECT_FIRST:-}" ]]; then
   if IFS= read -r first_line; then
     printf '%s\n' "$first_line" > "$selection_file"
@@ -395,6 +431,7 @@ PATH="$INTERACTIVE_DIR/bin:$PATH" TMUX_TEST_LOG_DIR="$INTERACTIVE_DIR/logs" TMUX
 assert_file_exists "$INTERACTIVE_DIR/logs/fzf-stdin.txt"
 assert_contains "$(<"$INTERACTIVE_DIR/logs/fzf-stdin.txt")" $'root-1\troot\tworking\ttmux-opencode\tMain session\t$9\t@11\t%42'
 assert_file_exists "$INTERACTIVE_DIR/logs/fzf-args.txt"
+assert_fzf_delimiter_arg "$INTERACTIVE_DIR/logs/fzf-args.txt"
 assert_contains "$(<"$INTERACTIVE_DIR/logs/fzf-args.txt")" $'--nth=4,5'
 assert_contains "$(<"$INTERACTIVE_DIR/logs/fzf-args.txt")" $'--with-nth=4,5'
 assert_file_exists "$INTERACTIVE_DIR/logs/tmux-calls.txt"
@@ -444,6 +481,33 @@ fi
 assert_contains "$missing_fzf_output" "fzf"
 assert_not_contains "$missing_fzf_output" "Press any key to close"
 
+cat > "$INTERACTIVE_DIR/bin/bash" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+
+if [[ "${1:-}" == *"scripts/render_status.sh" ]]; then
+  exit 17
+fi
+
+exec /bin/bash "$@"
+EOF
+chmod +x "$INTERACTIVE_DIR/bin/bash"
+
+set +e
+render_failure_output="$(PATH="$INTERACTIVE_DIR/bin:$PATH" TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" /bin/bash "$ROOT_DIR/scripts/popup_command.sh" 2>&1 <<< 'x')"
+render_failure_status=$?
+set -e
+
+if [[ $render_failure_status -ne 17 ]]; then
+  printf 'Expected popup_command.sh to surface render_status.sh failure\nActual status: %s\nActual output:\n%s\n' "$render_failure_status" "$render_failure_output" >&2
+  exit 1
+fi
+
+assert_contains "$render_failure_output" "render_status.sh failed with exit code 17"
+
+rm -f "$INTERACTIVE_DIR/bin/bash"
+rm -f "$INTERACTIVE_DIR/logs/fzf-stdin.txt" "$INTERACTIVE_DIR/logs/fzf-args.txt" "$INTERACTIVE_DIR/logs/fzf-selection.txt" "$INTERACTIVE_DIR/logs/tmux-calls.txt"
+
 set +e
 empty_fzf_output="$(PATH="$INTERACTIVE_DIR/bin:$PATH" TMUX_TEST_LOG_DIR="$INTERACTIVE_DIR/logs" TMUX_OPENCODE_STATUS_DIR="$EMPTY_DIR" FZF_SELECT_FIRST=1 bash "$ROOT_DIR/scripts/popup_command.sh" 2>&1 <<< 'x')"
 empty_fzf_status=$?
@@ -454,7 +518,8 @@ if [[ $empty_fzf_status -ne 0 ]]; then
   exit 1
 fi
 
-assert_not_contains "$empty_fzf_output" "tmux metadata"
+assert_contains "$empty_fzf_output" "No active opencode sessions"
+assert_file_not_exists "$INTERACTIVE_DIR/logs/fzf-stdin.txt"
 assert_no_tmux_calls "$INTERACTIVE_DIR/logs/tmux-calls.txt"
 
 printf 'render_status_test.sh: PASS\n'
