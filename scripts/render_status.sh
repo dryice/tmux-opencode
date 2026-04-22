@@ -29,6 +29,10 @@ def escape_machine_field(value):
     return value.replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n").replace("\r", "\\r")
 
 
+def normalize_display_field(value):
+    return " ".join(value.replace("\t", " ").replace("\r", " ").replace("\n", " ").split())
+
+
 if status_dir.exists():
     for path in sorted(status_dir.glob("*.json")):
         try:
@@ -90,6 +94,7 @@ else:
             glyph = status_glyphs.get(status, "•")
             status_label = f"{glyph} {status}"
             prefix = "- " if kind == "subagent" else ""
-            display_project_name = project_name[:PROJECT_NAME_WIDTH]
-            print(f"{status_label:<12}  {display_project_name:<{PROJECT_NAME_WIDTH}}  {prefix}{title}")
+            display_project_name = normalize_display_field(project_name)[:PROJECT_NAME_WIDTH]
+            display_title = normalize_display_field(title)
+            print(f"{status_label:<12}  {display_project_name:<{PROJECT_NAME_WIDTH}}  {prefix}{display_title}")
 PY

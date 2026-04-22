@@ -197,6 +197,8 @@ assert_contains "$output" "× error"
 assert_contains "$output" "○ idle"
 assert_contains "$output" "? question"
 assert_contains "$output" "● working"
+assert_contains "$output" "tab project"
+assert_contains "$output" "Line 1 Line 2"
 assert_contains "$output" "Custom session"
 assert_contains "$output" "Broken session"
 assert_contains "$output" "Idle session"
@@ -204,6 +206,8 @@ assert_contains "$output" "Second session"
 assert_contains "$output" "Main session"
 assert_contains "$output" "tmux-opencode"
 assert_contains "$output" "my-app"
+assert_not_contains "$output" $'tab\tproject'
+assert_not_contains "$output" $'Line 1\nLine 2'
 assert_not_contains "$output" "Session is idle"
 assert_not_contains "$output" "Subagent helper"
 
