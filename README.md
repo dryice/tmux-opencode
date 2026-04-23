@@ -10,6 +10,7 @@ The project has two parts:
 ## Requirements
 
 - `tmux`
+- `fzf`
 - `python3`
 - `npm`
 - OpenCode with plugin support
@@ -52,6 +53,9 @@ The writer uses these snapshot fields:
 - `kind`
 - `title`
 - `projectName` (optional)
+- `tmuxSessionID` (optional)
+- `tmuxWindowID` (optional)
+- `tmuxPaneID` (optional)
 - `status`
 - `summary`
 - `updatedAt`
@@ -131,9 +135,9 @@ Then install or reload with TPM:
 prefix + I
 ```
 
-The tmux entrypoint is `tmux-opencode.tmux`. It binds the configured key to `scripts/show_popup.sh`, which opens a tmux popup and runs `scripts/render_status.sh`.
+The tmux entrypoint is `tmux-opencode.tmux`. It binds the configured key to `scripts/show_popup.sh`, which opens a tmux popup and runs `scripts/popup_command.sh`.
 
-The popup renders one line per snapshot in this format:
+The popup matches on the rendered session table and uses stored tmux metadata to jump to the selected tmux session, window, and pane. The human-readable display rows look like this:
 
 ```text
 <status> <projectName> <title>
@@ -162,7 +166,10 @@ Subagents are prefixed with `- ` when shown.
 - Idle sessions stay visible as `idle` rows until another event replaces or removes them.
 - Each plugin instance keeps one visible root session at a time; selecting another session or creating a new one replaces the prior visible root snapshot from that instance.
 - Snapshots from other running OpenCode instances are left alone until those instances explicitly update or remove them.
-- The popup stays open until you press a key.
+- The popup requires `fzf`. If `fzf` is unavailable, the popup exits with a short error.
+- Pressing Enter on a selectable row jumps to the stored tmux session, window, and pane.
+- Canceling `fzf` exits cleanly without changing tmux state.
+- Selecting a row that lacks tmux metadata fails safely with a short error.
 - If no valid snapshots exist, the popup shows `No active opencode sessions`.
 - The popup is a point-in-time snapshot taken when it opens; there is no live refresh.
 
@@ -186,6 +193,10 @@ status_dir.mkdir(parents=True, exist_ok=True)
     "parentID": None,
     "kind": "root",
     "title": "Demo",
+    "projectName": "tmux-opencode",
+    "tmuxSessionID": "$1",
+    "tmuxWindowID": "@2",
+    "tmuxPaneID": "%3",
     "status": "working",
     "summary": "Waiting for tmux",
     "updatedAt": int(time.time() * 1000),
@@ -197,4 +208,10 @@ Render it directly:
 
 ```bash
 TMUX_OPENCODE_STATUS_DIR="$PWD/.tmp-status" bash scripts/render_status.sh
+```
+
+Open the interactive selector directly:
+
+```bash
+TMUX_OPENCODE_STATUS_DIR="$PWD/.tmp-status" bash scripts/popup_command.sh
 ```

@@ -5,6 +5,18 @@ import path from "node:path"
 import plugin from "../index"
 import { STATUS_DIR_ENV_KEY } from "../types"
 
+const { resolveTmuxContextMock, renameTmuxWindowMock, buildTmuxWindowNameMock } = vi.hoisted(() => ({
+  resolveTmuxContextMock: vi.fn(),
+  renameTmuxWindowMock: vi.fn(),
+  buildTmuxWindowNameMock: vi.fn(),
+}))
+
+vi.mock("../tmux", () => ({
+  resolveTmuxContext: resolveTmuxContextMock,
+  renameTmuxWindow: renameTmuxWindowMock,
+  buildTmuxWindowName: buildTmuxWindowNameMock,
+}))
+
 type SessionRecord = {
   id: string
   projectID: string
@@ -228,6 +240,23 @@ describe("tmux-opencode plugin", () => {
   beforeEach(() => {
     tmpDir = mkdtempSync(path.join(os.tmpdir(), "tmux-opencode-plugin-"))
     process.env[STATUS_DIR_ENV_KEY] = tmpDir
+    resolveTmuxContextMock.mockReset()
+    renameTmuxWindowMock.mockReset()
+    buildTmuxWindowNameMock.mockReset()
+    resolveTmuxContextMock.mockResolvedValue(null)
+    buildTmuxWindowNameMock.mockImplementation(({ projectName, sessionTitle }: { projectName: string; sessionTitle: string }) => {
+      const sanitize = (value: string, maxLength: number) =>
+        value
+          .replace(/[\r\n\t]+/g, " ")
+          .replace(/[\x00-\x1F\x7F]+/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, maxLength)
+
+      const sanitizedProjectName = sanitize(projectName, 80)
+      const sanitizedSessionTitle = sanitize(sessionTitle, 80)
+      return sanitize(`${sanitizedProjectName}-${sanitizedSessionTitle}`, 160)
+    })
   })
 
   afterEach(() => {
@@ -263,6 +292,103 @@ describe("tmux-opencode plugin", () => {
 
     const snap = readSnapshot(tmpDir, "ses-project")
     expect(snap.projectName).toBe("my-project")
+  })
+
+  it("writes tmux ids into snapshots when tmux context is available", async () => {
+    resolveTmuxContextMock.mockResolvedValue({
+      tmuxSessionID: "$3",
+      tmuxWindowID: "@4",
+      tmuxPaneID: "%5",
+    })
+
+    const client = makeClient({ title: "Coding task" })
+    const hooks = await plugin({ client, project: { name: "my-project", worktree: "/tmp/my-project" } } as never)
+    await hooks.event!(busyEvent("ses-tmux"))
+
+    const snap = readSnapshot(tmpDir, "ses-tmux")
+    expect(snap.tmuxSessionID).toBe("$3")
+    expect(snap.tmuxWindowID).toBe("@4")
+    expect(snap.tmuxPaneID).toBe("%5")
+  })
+
+  it("does not re-resolve tmux context when the caller already knows it is unavailable", async () => {
+    const client = makeClient({ title: "Coding task" })
+    const hooks = await plugin({ client, project: { name: "my-project", worktree: "/tmp/my-project" } } as never)
+
+    await hooks.event!(busyEvent("ses-tmux-null"))
+
+    expect(resolveTmuxContextMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("renames the tmux window for root sessions when tmux context is available", async () => {
+    resolveTmuxContextMock.mockResolvedValue({
+      tmuxSessionID: "$3",
+      tmuxWindowID: "@4",
+      tmuxPaneID: "%5",
+    })
+
+    const client = makeClient({ title: "Main session" })
+    const hooks = await plugin({ client, project: { name: "tmux-opencode", worktree: "/tmp/tmux-opencode" } } as never)
+    await hooks.event!(busyEvent("ses-root-rename"))
+
+    expect(renameTmuxWindowMock).toHaveBeenCalledWith({
+      tmuxWindowID: "@4",
+      projectName: "tmux-opencode",
+      sessionTitle: "Main session",
+    })
+  })
+
+  it("does not rename the tmux window again when the desired root title is unchanged", async () => {
+    resolveTmuxContextMock.mockResolvedValue({
+      tmuxSessionID: "$3",
+      tmuxWindowID: "@4",
+      tmuxPaneID: "%5",
+    })
+
+    const client = makeClient({ title: "Main session" })
+    const hooks = await plugin({ client, project: { name: "tmux-opencode", worktree: "/tmp/tmux-opencode" } } as never)
+
+    await hooks.event!(busyEvent("ses-root-rename-once"))
+    await hooks.event!(idleEvent("ses-root-rename-once"))
+
+    expect(renameTmuxWindowMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("does not rename the tmux window again when raw titles sanitize to the same effective name", async () => {
+    resolveTmuxContextMock.mockResolvedValue({
+      tmuxSessionID: "$3",
+      tmuxWindowID: "@4",
+      tmuxPaneID: "%5",
+    })
+
+    const client = {
+      session: {
+        get: vi.fn()
+          .mockResolvedValueOnce({ data: makeSession("ses-root-sanitize-once", { title: "Main\tsession" }) })
+          .mockResolvedValueOnce({ data: makeSession("ses-root-sanitize-once", { title: "Main  session" }) }),
+      },
+    }
+
+    const hooks = await plugin({ client, project: { name: "tmux-opencode", worktree: "/tmp/tmux-opencode" } } as never)
+
+    await hooks.event!(busyEvent("ses-root-sanitize-once"))
+    await hooks.event!(idleEvent("ses-root-sanitize-once"))
+
+    expect(renameTmuxWindowMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("does not rename the tmux window for subagent sessions", async () => {
+    resolveTmuxContextMock.mockResolvedValue({
+      tmuxSessionID: "$3",
+      tmuxWindowID: "@4",
+      tmuxPaneID: "%5",
+    })
+
+    const client = makeClient({ parentID: "parent-1", title: "Subagent helper" })
+    const hooks = await plugin({ client, project: { name: "tmux-opencode", worktree: "/tmp/tmux-opencode" } } as never)
+    await hooks.event!(busyEvent("ses-subagent"))
+
+    expect(renameTmuxWindowMock).not.toHaveBeenCalled()
   })
 
   it("falls back to the worktree folder name when project.name is missing", async () => {

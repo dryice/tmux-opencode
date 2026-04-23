@@ -3,6 +3,7 @@ import path from "node:path"
 import { defaultStatusDirectory, STATUS_DIR_ENV_KEY } from "./types"
 import type { SessionSnapshot } from "./types"
 import { deleteSnapshot, writeSnapshot } from "./status-store"
+import { buildTmuxWindowName, renameTmuxWindow, resolveTmuxContext, type TmuxContext } from "./tmux"
 
 function directory(): string {
   return process.env[STATUS_DIR_ENV_KEY] ?? defaultStatusDirectory()
@@ -54,13 +55,27 @@ function isRootSession(session: SessionInfo): boolean {
   return !session.parentID
 }
 
+function tmuxFields(tmuxContext: TmuxContext | null | undefined) {
+  if (!tmuxContext) {
+    return {}
+  }
+
+  return {
+    tmuxSessionID: tmuxContext.tmuxSessionID,
+    tmuxWindowID: tmuxContext.tmuxWindowID,
+    tmuxPaneID: tmuxContext.tmuxPaneID,
+  }
+}
+
 async function writeSnapshotForSession(
   sessionID: string,
   session: SessionInfo,
   status: SessionSnapshot["status"],
   summary: string,
   projectName?: string,
+  tmuxContext?: TmuxContext | null,
 ) {
+  const resolvedTmuxContext = tmuxContext === undefined ? await resolveTmuxContext() : tmuxContext
   await writeSnapshot(directory(), {
     version: 1,
     sessionID,
@@ -68,6 +83,7 @@ async function writeSnapshotForSession(
     kind: session.parentID ? "subagent" : "root",
     title: session.title,
     projectName,
+    ...tmuxFields(resolvedTmuxContext),
     status,
     summary,
     updatedAt: Date.now(),
@@ -80,11 +96,13 @@ async function writeCurrentSnapshot(
   status: SessionSnapshot["status"],
   summary: string,
   projectName?: string,
+  tmuxContext?: TmuxContext | null,
 ) {
   const session = await readSession(client, sessionID)
   if (!session) return null
 
-  await writeSnapshotForSession(sessionID, session, status, summary, projectName)
+  const resolvedTmuxContext = tmuxContext === undefined ? await resolveTmuxContext() : tmuxContext
+  await writeSnapshotForSession(sessionID, session, status, summary, projectName, resolvedTmuxContext)
   return session
 }
 
@@ -122,27 +140,58 @@ function isExitCommand(command: string | undefined): boolean {
 const plugin: Plugin = async ({ client, project }) => {
   let visibleRootSessionID: string | undefined
   const projectName = deriveProjectName(project)
+  const renamedWindowTitles = new Map<string, string>()
+
+  async function renameRootWindowIfNeeded(session: SessionInfo, tmuxContext?: TmuxContext | null) {
+    if (!isRootSession(session) || !projectName || !tmuxContext?.tmuxWindowID) {
+      return
+    }
+
+    const desiredWindowTitle = buildTmuxWindowName({
+      projectName,
+      sessionTitle: session.title,
+    })
+    if (!desiredWindowTitle) {
+      return
+    }
+
+    if (renamedWindowTitles.get(tmuxContext.tmuxWindowID) === desiredWindowTitle) {
+      return
+    }
+
+    await renameTmuxWindow({
+      tmuxWindowID: tmuxContext.tmuxWindowID,
+      projectName,
+      sessionTitle: session.title,
+    })
+    renamedWindowTitles.set(tmuxContext.tmuxWindowID, desiredWindowTitle)
+  }
 
   async function rememberVisibleRootSnapshot(
     sessionID: string,
     status: SessionSnapshot["status"],
     summary: string,
   ) {
-    const session = await writeCurrentSnapshot(client, sessionID, status, summary, projectName)
+    const resolvedTmuxContext = await resolveTmuxContext()
+    const session = await writeCurrentSnapshot(client, sessionID, status, summary, projectName, resolvedTmuxContext)
     if (session && isRootSession(session)) {
+      await renameRootWindowIfNeeded(session, resolvedTmuxContext)
       visibleRootSessionID = sessionID
     }
   }
 
   async function showVisibleSession(sessionID: string) {
+    const session = await readSession(client, sessionID)
+    if (!session) return
+
+    const resolvedTmuxContext = await resolveTmuxContext()
+    await writeSnapshotForSession(sessionID, session, "idle", "Session is idle", projectName, resolvedTmuxContext)
+    await renameRootWindowIfNeeded(session, resolvedTmuxContext)
+
     if (visibleRootSessionID && visibleRootSessionID !== sessionID) {
       await deleteSnapshot(directory(), visibleRootSessionID)
     }
 
-    const session = await readSession(client, sessionID)
-    if (!session) return
-
-    await writeSnapshotForSession(sessionID, session, "idle", "Session is idle", projectName)
     visibleRootSessionID = isRootSession(session) ? sessionID : visibleRootSessionID
   }
 
@@ -181,7 +230,9 @@ const plugin: Plugin = async ({ client, project }) => {
           await deleteSnapshot(directory(), visibleRootSessionID)
         }
 
-        await writeSnapshotForSession(sessionID, session, "idle", "Session is idle", projectName)
+        const resolvedTmuxContext = await resolveTmuxContext()
+        await writeSnapshotForSession(sessionID, session, "idle", "Session is idle", projectName, resolvedTmuxContext)
+        await renameRootWindowIfNeeded(session, resolvedTmuxContext)
         if (isRootSession(session)) {
           visibleRootSessionID = sessionID
         }

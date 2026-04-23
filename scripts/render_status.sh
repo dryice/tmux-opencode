@@ -3,8 +3,9 @@ set -euo pipefail
 
 status_dir="${TMUX_OPENCODE_STATUS_DIR:-${TMPDIR:-/tmp}/opencode-status}"
 show_subagents="${TMUX_OPENCODE_SHOW_SUBAGENTS:-0}"
+render_mode="${TMUX_OPENCODE_RENDER_MODE:-display}"
 
-PYTHONIOENCODING=utf-8 STATUS_DIR="$status_dir" SHOW_SUBAGENTS="$show_subagents" python3 <<'PY'
+PYTHONIOENCODING=utf-8 STATUS_DIR="$status_dir" SHOW_SUBAGENTS="$show_subagents" RENDER_MODE="$render_mode" python3 <<'PY'
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,7 @@ PROJECT_NAME_WIDTH = 35
 
 status_dir = Path(os.environ["STATUS_DIR"])
 show_subagents = os.environ.get("SHOW_SUBAGENTS") == "1"
+render_mode = os.environ.get("RENDER_MODE", "display")
 rows = []
 status_glyphs = {
     "working": "●",
@@ -21,6 +23,15 @@ status_glyphs = {
     "idle": "○",
     "error": "×",
 }
+
+
+def escape_machine_field(value):
+    return value.replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n").replace("\r", "\\r")
+
+
+def normalize_display_field(value):
+    return " ".join(value.replace("\t", " ").replace("\r", " ").replace("\n", " ").split())
+
 
 if status_dir.exists():
     for path in sorted(status_dir.glob("*.json")):
@@ -51,17 +62,39 @@ if status_dir.exists():
         if not isinstance(project_name, str):
             continue
 
-        rows.append((updated_at, kind, status, project_name, title))
+        session_id = payload.get("sessionID")
+        if not isinstance(session_id, str):
+            continue
+
+        tmux_session_id = payload.get("tmuxSessionID", "")
+        tmux_window_id = payload.get("tmuxWindowID", "")
+        tmux_pane_id = payload.get("tmuxPaneID", "")
+        if not isinstance(tmux_session_id, str):
+            tmux_session_id = ""
+        if not isinstance(tmux_window_id, str):
+            tmux_window_id = ""
+        if not isinstance(tmux_pane_id, str):
+            tmux_pane_id = ""
+
+        rows.append((updated_at, session_id, kind, status, project_name, title, tmux_session_id, tmux_window_id, tmux_pane_id))
 
 rows.sort(key=lambda row: row[0], reverse=True)
 
 if not rows:
-    print("No active opencode sessions")
+    if render_mode != "machine":
+        print("No active opencode sessions")
 else:
-    for _, kind, status, project_name, title in rows:
-        glyph = status_glyphs.get(status, "•")
-        status_label = f"{glyph} {status}"
-        prefix = "- " if kind == "subagent" else ""
-        display_project_name = project_name[:PROJECT_NAME_WIDTH]
-        print(f"{status_label:<12}  {display_project_name:<{PROJECT_NAME_WIDTH}}  {prefix}{title}")
+    if render_mode == "machine":
+        for _, session_id, kind, status, project_name, title, tmux_session_id, tmux_window_id, tmux_pane_id in rows:
+            print(
+                f"{escape_machine_field(session_id)}\t{escape_machine_field(kind)}\t{escape_machine_field(status)}\t{escape_machine_field(project_name)}\t{escape_machine_field(title)}\t{escape_machine_field(tmux_session_id)}\t{escape_machine_field(tmux_window_id)}\t{escape_machine_field(tmux_pane_id)}"
+            )
+    else:
+        for _, _, kind, status, project_name, title, _, _, _ in rows:
+            glyph = status_glyphs.get(status, "•")
+            status_label = f"{glyph} {status}"
+            prefix = "- " if kind == "subagent" else ""
+            display_project_name = normalize_display_field(project_name)[:PROJECT_NAME_WIDTH]
+            display_title = normalize_display_field(title)
+            print(f"{status_label:<12}  {display_project_name:<{PROJECT_NAME_WIDTH}}  {prefix}{display_title}")
 PY
