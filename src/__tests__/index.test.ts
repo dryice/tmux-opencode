@@ -295,6 +295,15 @@ describe("tmux-opencode plugin", () => {
     expect(snap.tmuxPaneID).toBe("%5")
   })
 
+  it("does not re-resolve tmux context when the caller already knows it is unavailable", async () => {
+    const client = makeClient({ title: "Coding task" })
+    const hooks = await plugin({ client, project: { name: "my-project", worktree: "/tmp/my-project" } } as never)
+
+    await hooks.event!(busyEvent("ses-tmux-null"))
+
+    expect(resolveTmuxContextMock).toHaveBeenCalledTimes(1)
+  })
+
   it("renames the tmux window for root sessions when tmux context is available", async () => {
     resolveTmuxContextMock.mockResolvedValue({
       tmuxSessionID: "$3",

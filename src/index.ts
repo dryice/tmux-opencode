@@ -75,7 +75,7 @@ async function writeSnapshotForSession(
   projectName?: string,
   tmuxContext?: TmuxContext | null,
 ) {
-  const resolvedTmuxContext = tmuxContext ?? (await resolveTmuxContext())
+  const resolvedTmuxContext = tmuxContext === undefined ? await resolveTmuxContext() : tmuxContext
   await writeSnapshot(directory(), {
     version: 1,
     sessionID,
@@ -101,7 +101,7 @@ async function writeCurrentSnapshot(
   const session = await readSession(client, sessionID)
   if (!session) return null
 
-  const resolvedTmuxContext = tmuxContext ?? (await resolveTmuxContext())
+  const resolvedTmuxContext = tmuxContext === undefined ? await resolveTmuxContext() : tmuxContext
   await writeSnapshotForSession(sessionID, session, status, summary, projectName, resolvedTmuxContext)
   return session
 }
