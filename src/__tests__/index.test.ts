@@ -5,14 +5,16 @@ import path from "node:path"
 import plugin from "../index"
 import { STATUS_DIR_ENV_KEY } from "../types"
 
-const { resolveTmuxContextMock, renameTmuxWindowMock } = vi.hoisted(() => ({
+const { resolveTmuxContextMock, renameTmuxWindowMock, buildTmuxWindowNameMock } = vi.hoisted(() => ({
   resolveTmuxContextMock: vi.fn(),
   renameTmuxWindowMock: vi.fn(),
+  buildTmuxWindowNameMock: vi.fn(),
 }))
 
 vi.mock("../tmux", () => ({
   resolveTmuxContext: resolveTmuxContextMock,
   renameTmuxWindow: renameTmuxWindowMock,
+  buildTmuxWindowName: buildTmuxWindowNameMock,
 }))
 
 type SessionRecord = {
@@ -240,7 +242,21 @@ describe("tmux-opencode plugin", () => {
     process.env[STATUS_DIR_ENV_KEY] = tmpDir
     resolveTmuxContextMock.mockReset()
     renameTmuxWindowMock.mockReset()
+    buildTmuxWindowNameMock.mockReset()
     resolveTmuxContextMock.mockResolvedValue(null)
+    buildTmuxWindowNameMock.mockImplementation(({ projectName, sessionTitle }: { projectName: string; sessionTitle: string }) => {
+      const sanitize = (value: string, maxLength: number) =>
+        value
+          .replace(/[\r\n\t]+/g, " ")
+          .replace(/[\x00-\x1F\x7F]+/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, maxLength)
+
+      const sanitizedProjectName = sanitize(projectName, 80)
+      const sanitizedSessionTitle = sanitize(sessionTitle, 80)
+      return sanitize(`${sanitizedProjectName}-${sanitizedSessionTitle}`, 160)
+    })
   })
 
   afterEach(() => {
@@ -334,6 +350,29 @@ describe("tmux-opencode plugin", () => {
 
     await hooks.event!(busyEvent("ses-root-rename-once"))
     await hooks.event!(idleEvent("ses-root-rename-once"))
+
+    expect(renameTmuxWindowMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("does not rename the tmux window again when raw titles sanitize to the same effective name", async () => {
+    resolveTmuxContextMock.mockResolvedValue({
+      tmuxSessionID: "$3",
+      tmuxWindowID: "@4",
+      tmuxPaneID: "%5",
+    })
+
+    const client = {
+      session: {
+        get: vi.fn()
+          .mockResolvedValueOnce({ data: makeSession("ses-root-sanitize-once", { title: "Main\tsession" }) })
+          .mockResolvedValueOnce({ data: makeSession("ses-root-sanitize-once", { title: "Main  session" }) }),
+      },
+    }
+
+    const hooks = await plugin({ client, project: { name: "tmux-opencode", worktree: "/tmp/tmux-opencode" } } as never)
+
+    await hooks.event!(busyEvent("ses-root-sanitize-once"))
+    await hooks.event!(idleEvent("ses-root-sanitize-once"))
 
     expect(renameTmuxWindowMock).toHaveBeenCalledTimes(1)
   })

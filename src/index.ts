@@ -3,7 +3,7 @@ import path from "node:path"
 import { defaultStatusDirectory, STATUS_DIR_ENV_KEY } from "./types"
 import type { SessionSnapshot } from "./types"
 import { deleteSnapshot, writeSnapshot } from "./status-store"
-import { renameTmuxWindow, resolveTmuxContext, type TmuxContext } from "./tmux"
+import { buildTmuxWindowName, renameTmuxWindow, resolveTmuxContext, type TmuxContext } from "./tmux"
 
 function directory(): string {
   return process.env[STATUS_DIR_ENV_KEY] ?? defaultStatusDirectory()
@@ -147,7 +147,14 @@ const plugin: Plugin = async ({ client, project }) => {
       return
     }
 
-    const desiredWindowTitle = `${projectName}-${session.title}`
+    const desiredWindowTitle = buildTmuxWindowName({
+      projectName,
+      sessionTitle: session.title,
+    })
+    if (!desiredWindowTitle) {
+      return
+    }
+
     if (renamedWindowTitles.get(tmuxContext.tmuxWindowID) === desiredWindowTitle) {
       return
     }
