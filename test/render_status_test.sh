@@ -452,6 +452,22 @@ assert_no_tmux_calls "$INTERACTIVE_DIR/logs/tmux-calls.txt"
 rm -f "$INTERACTIVE_DIR/logs/fzf-stdin.txt" "$INTERACTIVE_DIR/logs/fzf-args.txt" "$INTERACTIVE_DIR/logs/fzf-selection.txt" "$INTERACTIVE_DIR/logs/tmux-calls.txt"
 
 set +e
+no_match_output="$(PATH="$INTERACTIVE_DIR/bin:$PATH" TMUX_TEST_LOG_DIR="$INTERACTIVE_DIR/logs" TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" FZF_EXIT_CODE=1 bash "$ROOT_DIR/scripts/popup_command.sh" 2>&1 <<< 'x')"
+no_match_status=$?
+set -e
+
+if [[ $no_match_status -ne 0 ]]; then
+  printf 'Expected no-match popup flow to exit cleanly\nActual status: %s\nActual output:\n%s\n' "$no_match_status" "$no_match_output" >&2
+  exit 1
+fi
+
+assert_file_exists "$INTERACTIVE_DIR/logs/fzf-stdin.txt"
+assert_contains "$(<"$INTERACTIVE_DIR/logs/fzf-stdin.txt")" $'root-1\troot\tworking\ttmux-opencode\tMain session\t$9\t@11\t%42'
+assert_no_tmux_calls "$INTERACTIVE_DIR/logs/tmux-calls.txt"
+
+rm -f "$INTERACTIVE_DIR/logs/fzf-stdin.txt" "$INTERACTIVE_DIR/logs/fzf-args.txt" "$INTERACTIVE_DIR/logs/fzf-selection.txt" "$INTERACTIVE_DIR/logs/tmux-calls.txt"
+
+set +e
 subagent_output="$(PATH="$INTERACTIVE_DIR/bin:$PATH" TMUX_TEST_LOG_DIR="$INTERACTIVE_DIR/logs" TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" TMUX_OPENCODE_SHOW_SUBAGENTS=1 FZF_SELECTION=$'sub-1\tsubagent\twaiting\ttmux-opencode\tSubagent helper\t\t\t' bash "$ROOT_DIR/scripts/popup_command.sh" 2>&1 <<< 'x')"
 subagent_status=$?
 set -e

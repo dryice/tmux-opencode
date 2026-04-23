@@ -30,7 +30,7 @@ selection="$(printf '%s\n' "$machine_output" | fzf "--delimiter=$delimiter" --nt
 status=$?
 set -e
 
-if [[ $status -eq 130 ]]; then
+if [[ $status -eq 130 || $status -eq 1 ]]; then
   exit 0
 fi
 
