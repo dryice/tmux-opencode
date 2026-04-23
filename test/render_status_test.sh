@@ -436,10 +436,37 @@ assert_file_exists "$INTERACTIVE_DIR/logs/fzf-stdin.txt"
 assert_contains "$(<"$INTERACTIVE_DIR/logs/fzf-stdin.txt")" $'root-1\troot\tworking\ttmux-opencode\tMain session\t$9\t@11\t%42'
 assert_file_exists "$INTERACTIVE_DIR/logs/fzf-args.txt"
 assert_fzf_delimiter_arg "$INTERACTIVE_DIR/logs/fzf-args.txt"
-assert_contains "$(<"$INTERACTIVE_DIR/logs/fzf-args.txt")" $'--nth=4,5'
+assert_not_contains "$(<"$INTERACTIVE_DIR/logs/fzf-args.txt")" "--nth"
 assert_contains "$(<"$INTERACTIVE_DIR/logs/fzf-args.txt")" $'--with-nth=4,5'
 assert_file_exists "$INTERACTIVE_DIR/logs/tmux-calls.txt"
 assert_tmux_call_sequence "$INTERACTIVE_DIR/logs/tmux-calls.txt" '$9' '@11' '%42'
+
+REAL_FZF_DIR="$WORK_DIR/real-fzf"
+mkdir -p "$REAL_FZF_DIR/bin" "$REAL_FZF_DIR/logs"
+
+cat > "$REAL_FZF_DIR/bin/tmux" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+log_dir="${TMUX_TEST_LOG_DIR:?missing TMUX_TEST_LOG_DIR}"
+printf '%s\n' "$*" >> "$log_dir/tmux-calls.txt"
+EOF
+chmod +x "$REAL_FZF_DIR/bin/tmux"
+
+if command -v fzf >/dev/null 2>&1; then
+  set +e
+  real_fzf_output="$(PATH="$REAL_FZF_DIR/bin:$PATH" TMUX_TEST_LOG_DIR="$REAL_FZF_DIR/logs" TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" FZF_DEFAULT_OPTS='--filter=Main' bash "$ROOT_DIR/scripts/popup_command.sh" 2>&1)"
+  real_fzf_status=$?
+  set -e
+
+  if [[ $real_fzf_status -ne 0 ]]; then
+    printf 'Expected popup_command.sh to let real fzf match visible fields\nActual status: %s\nActual output:\n%s\n' "$real_fzf_status" "$real_fzf_output" >&2
+    exit 1
+  fi
+
+  assert_file_exists "$REAL_FZF_DIR/logs/tmux-calls.txt"
+  assert_tmux_call_sequence "$REAL_FZF_DIR/logs/tmux-calls.txt" '$9' '@11' '%42'
+fi
 
 rm -f "$INTERACTIVE_DIR/logs/fzf-stdin.txt" "$INTERACTIVE_DIR/logs/fzf-args.txt" "$INTERACTIVE_DIR/logs/fzf-selection.txt" "$INTERACTIVE_DIR/logs/tmux-calls.txt"
 
