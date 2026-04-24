@@ -26,7 +26,7 @@ fi
 
 selection=""
 set +e
-selection="$(printf '%s\n' "$machine_output" | fzf "--delimiter=$delimiter" --nth=4,5 --with-nth=4,5)"
+selection="$(printf '%s\n' "$machine_output" | fzf "--delimiter=$delimiter" --with-nth=4,5)"
 status=$?
 set -e
 
