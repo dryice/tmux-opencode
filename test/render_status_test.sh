@@ -590,4 +590,50 @@ assert_contains "$empty_fzf_output" "No active opencode sessions"
 assert_file_not_exists "$INTERACTIVE_DIR/logs/fzf-stdin.txt"
 assert_no_tmux_calls "$INTERACTIVE_DIR/logs/tmux-calls.txt"
 
+# Regression test for popup hang
+printf 'Testing for hang in machine mode... '
+set +e
+hang_output="$(TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" ROOT_DIR="$ROOT_DIR" python3 - <<'PY' 2>&1
+import os
+import subprocess
+import sys
+
+env = os.environ.copy()
+env["TMUX_OPENCODE_RENDER_MODE"] = "machine"
+
+try:
+    completed = subprocess.run(
+        ["bash", os.path.join(os.environ["ROOT_DIR"], "scripts", "render_status.sh")],
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=2,
+        check=False,
+    )
+except subprocess.TimeoutExpired:
+    print("hang detected", file=sys.stderr)
+    sys.exit(124)
+
+if completed.stderr:
+    sys.stderr.write(completed.stderr)
+
+sys.exit(completed.returncode)
+PY
+)"
+hang_status=$?
+set -e
+
+if [[ $hang_status -eq 124 ]]; then
+  printf 'FAILED (hang detected)\n' >&2
+  exit 1
+fi
+
+if [[ $hang_status -ne 0 ]]; then
+  printf 'FAILED (exit code %s)\nOutput:\n%s\n' "$hang_status" "$hang_output" >&2
+  exit 1
+fi
+
+printf 'OK\n'
+
 printf 'render_status_test.sh: PASS\n'
