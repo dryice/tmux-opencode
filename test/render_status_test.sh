@@ -437,7 +437,7 @@ assert_contains "$(<"$INTERACTIVE_DIR/logs/fzf-stdin.txt")" $'root-1\troot\twork
 assert_file_exists "$INTERACTIVE_DIR/logs/fzf-args.txt"
 assert_fzf_delimiter_arg "$INTERACTIVE_DIR/logs/fzf-args.txt"
 assert_not_contains "$(<"$INTERACTIVE_DIR/logs/fzf-args.txt")" "--nth"
-assert_contains "$(<"$INTERACTIVE_DIR/logs/fzf-args.txt")" $'--with-nth=4,5'
+assert_contains "$(<"$INTERACTIVE_DIR/logs/fzf-args.txt")" $'--with-nth=3,4,5'
 assert_file_exists "$INTERACTIVE_DIR/logs/tmux-calls.txt"
 assert_tmux_call_sequence "$INTERACTIVE_DIR/logs/tmux-calls.txt" '$9' '@11' '%42'
 
@@ -461,6 +461,21 @@ if command -v fzf >/dev/null 2>&1; then
 
   if [[ $real_fzf_status -ne 0 ]]; then
     printf 'Expected popup_command.sh to let real fzf match visible fields\nActual status: %s\nActual output:\n%s\n' "$real_fzf_status" "$real_fzf_output" >&2
+    exit 1
+  fi
+
+  assert_file_exists "$REAL_FZF_DIR/logs/tmux-calls.txt"
+  assert_tmux_call_sequence "$REAL_FZF_DIR/logs/tmux-calls.txt" '$9' '@11' '%42'
+
+  rm -f "$REAL_FZF_DIR/logs/tmux-calls.txt"
+
+  set +e
+  real_status_filter_output="$(PATH="$REAL_FZF_DIR/bin:$PATH" TMUX_TEST_LOG_DIR="$REAL_FZF_DIR/logs" TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" FZF_DEFAULT_OPTS='--filter=working\ Main' bash "$ROOT_DIR/scripts/popup_command.sh" 2>&1)"
+  real_status_filter_status=$?
+  set -e
+
+  if [[ $real_status_filter_status -ne 0 ]]; then
+    printf 'Expected popup_command.sh to let real fzf match session status\nActual status: %s\nActual output:\n%s\n' "$real_status_filter_status" "$real_status_filter_output" >&2
     exit 1
   fi
 

@@ -137,7 +137,7 @@ prefix + I
 
 The tmux entrypoint is `tmux-opencode.tmux`. It binds the configured key to `scripts/show_popup.sh`, which opens a tmux popup and runs `scripts/popup_command.sh`.
 
-The popup matches on the rendered session table and uses stored tmux metadata to jump to the selected tmux session, window, and pane. The human-readable display rows look like this:
+The popup uses stored tmux metadata to jump to the selected tmux session, window, and pane. `fzf` displays and matches against the session status, project name, and title. The human-readable rows look like this:
 
 ```text
 <status> <projectName> <title>
