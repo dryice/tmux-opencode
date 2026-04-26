@@ -65,7 +65,7 @@ describe("tmux helpers", () => {
 
     expect(execFileMock).toHaveBeenCalledWith(
       "tmux",
-      ["rename-window", "-t", "@9", "tmux-opencode-Main session"],
+      ["rename-window", "-t", "@9", "tmux-opencode"],
       expect.any(Function),
     )
   })

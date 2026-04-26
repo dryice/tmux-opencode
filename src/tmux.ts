@@ -16,9 +16,7 @@ function sanitizeTmuxWindowNamePart(value: string, maxLength: number): string {
 }
 
 export function buildTmuxWindowName(input: { projectName: string; sessionTitle: string }): string {
-  const projectName = sanitizeTmuxWindowNamePart(input.projectName, 80)
-  const sessionTitle = sanitizeTmuxWindowNamePart(input.sessionTitle, 80)
-  return sanitizeTmuxWindowNamePart(`${projectName}-${sessionTitle}`, 160)
+  return sanitizeTmuxWindowNamePart(input.projectName, 160)
 }
 
 function execTmux(args: string[]): Promise<string> {
