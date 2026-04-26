@@ -153,9 +153,9 @@ Subagents are prefixed with `- ` when shown.
 - `question.asked` writes `question`.
 - `permission.asked` and the `permission.ask` hook write `waiting` with the permission type in the summary.
 - `tui.session.select` switches the visible root session for that plugin instance and writes an `idle` snapshot for the selected session.
-- `session.new` removes the current session snapshot before the replacement session is created.
-- `/exit` and other `*.exit` commands remove that session snapshot.
-- `session.deleted` removes the snapshot.
+- `session.new` removes the current root snapshot and every descendant snapshot before the replacement session is created.
+- `/exit` and other `*.exit` commands remove the current root snapshot and all descendant snapshots; child-session exits are left visible until the root topic is cleared.
+- `session.deleted` removes the root snapshot tree; child-session deletions are left visible until the root topic is cleared.
 - Message streaming events such as `message.part.delta` are ignored; status is driven by explicit session and permission events.
 
 ## Viewer behavior
@@ -165,6 +165,7 @@ Subagents are prefixed with `- ` when shown.
 - Malformed snapshot files are ignored.
 - Idle sessions stay visible as `idle` rows until another event replaces or removes them.
 - Each plugin instance keeps one visible root session at a time; selecting another session or creating a new one replaces the prior visible root snapshot from that instance.
+- Child snapshots keep their `parentID` relationship and remain on disk until the owning root session exits or is replaced with `/new`.
 - Snapshots from other running OpenCode instances are left alone until those instances explicitly update or remove them.
 - The popup requires `fzf`. If `fzf` is unavailable, the popup exits with a short error.
 - Pressing Enter on a selectable row jumps to the stored tmux session, window, and pane.

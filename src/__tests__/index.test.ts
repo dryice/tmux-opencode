@@ -244,7 +244,7 @@ describe("tmux-opencode plugin", () => {
     renameTmuxWindowMock.mockReset()
     buildTmuxWindowNameMock.mockReset()
     resolveTmuxContextMock.mockResolvedValue(null)
-    buildTmuxWindowNameMock.mockImplementation(({ projectName, sessionTitle }: { projectName: string; sessionTitle: string }) => {
+    buildTmuxWindowNameMock.mockImplementation(({ projectName }: { projectName: string; sessionTitle: string }) => {
       const sanitize = (value: string, maxLength: number) =>
         value
           .replace(/[\r\n\t]+/g, " ")
@@ -253,9 +253,7 @@ describe("tmux-opencode plugin", () => {
           .trim()
           .slice(0, maxLength)
 
-      const sanitizedProjectName = sanitize(projectName, 80)
-      const sanitizedSessionTitle = sanitize(sessionTitle, 80)
-      return sanitize(`${sanitizedProjectName}-${sanitizedSessionTitle}`, 160)
+      return sanitize(projectName, 160)
     })
   })
 
@@ -414,8 +412,14 @@ describe("tmux-opencode plugin", () => {
   })
 
   it("sets kind to subagent when parentID is present", async () => {
-    const client = makeClient({ parentID: "parent-1" })
+    const client = makeClient({
+      sessions: {
+        "parent-1": makeSession("parent-1", { title: "Root session" }),
+        "ses-child": makeSession("ses-child", { parentID: "parent-1" }),
+      },
+    })
     const hooks = await plugin({ client } as never)
+    await hooks.event!(busyEvent("parent-1"))
     await hooks.event!(busyEvent("ses-child"))
 
     const snap = readSnapshot(tmpDir, "ses-child")
@@ -563,8 +567,14 @@ describe("tmux-opencode plugin", () => {
   })
 
   it("marks permission.ask snapshots as subagent when parentID is present", async () => {
-    const client = makeClient({ parentID: "root-1", title: "Sub task" })
+    const client = makeClient({
+      sessions: {
+        "root-1": makeSession("root-1", { title: "Root session" }),
+        "ses-sub-perm": makeSession("ses-sub-perm", { parentID: "root-1", title: "Sub task" }),
+      },
+    })
     const hooks = await plugin({ client } as never)
+    await hooks.event!(busyEvent("root-1"))
     await hooks["permission.ask"]!(permissionInput("ses-sub-perm", "write") as never, {
       status: "ask",
     })
@@ -573,6 +583,42 @@ describe("tmux-opencode plugin", () => {
     expect(snap.kind).toBe("subagent")
     expect(snap.parentID).toBe("root-1")
     expect(snap.status).toBe("waiting")
+  })
+
+  it("does not write a child snapshot when its parent snapshot is missing", async () => {
+    const client = makeClient({
+      sessions: {
+        "ses-child-missing-parent": makeSession("ses-child-missing-parent", {
+          parentID: "ses-missing-root",
+          title: "Orphan child",
+        }),
+      },
+    })
+    const hooks = await plugin({ client } as never)
+
+    await hooks.event!(busyEvent("ses-child-missing-parent"))
+
+    expect(existsSync(path.join(tmpDir, "ses-child-missing-parent.json"))).toBe(false)
+  })
+
+  it("writes a child snapshot when its parent snapshot exists", async () => {
+    const client = makeClient({
+      sessions: {
+        "ses-root-present": makeSession("ses-root-present", { title: "Root session" }),
+        "ses-child-present": makeSession("ses-child-present", {
+          parentID: "ses-root-present",
+          title: "Child session",
+        }),
+      },
+    })
+    const hooks = await plugin({ client } as never)
+
+    await hooks.event!(busyEvent("ses-root-present"))
+    await hooks.event!(busyEvent("ses-child-present"))
+
+    const snap = readSnapshot(tmpDir, "ses-child-present")
+    expect(snap.kind).toBe("subagent")
+    expect(snap.parentID).toBe("ses-root-present")
   })
 
   it("keeps snapshots from another running instance when a new plugin instance initializes", async () => {
@@ -652,5 +698,131 @@ describe("tmux-opencode plugin", () => {
 
     expect(existsSync(path.join(tmpDir, "ses-exit.json"))).toBe(false)
     expect(existsSync(path.join(tmpDir, "ses-other.json"))).toBe(true)
+  })
+
+  it("deletes the root snapshot and all descendants for an exit command", async () => {
+    const client = makeClient({
+      sessions: {
+        "ses-root-exit": makeSession("ses-root-exit", { title: "Root session" }),
+        "ses-child-exit": makeSession("ses-child-exit", {
+          parentID: "ses-root-exit",
+          title: "Child session",
+        }),
+        "ses-grandchild-exit": makeSession("ses-grandchild-exit", {
+          parentID: "ses-child-exit",
+          title: "Grandchild session",
+        }),
+      },
+    })
+    const hooks = await plugin({ client } as never)
+
+    await hooks.event!(busyEvent("ses-root-exit"))
+    await hooks.event!(busyEvent("ses-child-exit"))
+    await hooks.event!(busyEvent("ses-grandchild-exit"))
+
+    await hooks.event!(commandExecutedEvent("ses-root-exit", "/exit") as never)
+
+    expect(existsSync(path.join(tmpDir, "ses-root-exit.json"))).toBe(false)
+    expect(existsSync(path.join(tmpDir, "ses-child-exit.json"))).toBe(false)
+    expect(existsSync(path.join(tmpDir, "ses-grandchild-exit.json"))).toBe(false)
+  })
+
+  it("keeps a child snapshot when the child session exits", async () => {
+    const client = makeClient({
+      sessions: {
+        "ses-root-child-exit": makeSession("ses-root-child-exit", { title: "Root session" }),
+        "ses-child-keep": makeSession("ses-child-keep", {
+          parentID: "ses-root-child-exit",
+          title: "Child session",
+        }),
+      },
+    })
+    const hooks = await plugin({ client } as never)
+
+    await hooks.event!(busyEvent("ses-root-child-exit"))
+    await hooks.event!(busyEvent("ses-child-keep"))
+    await hooks.event!(commandExecutedEvent("ses-child-keep", "/exit") as never)
+
+    expect(existsSync(path.join(tmpDir, "ses-child-keep.json"))).toBe(true)
+  })
+
+  it("deletes the root snapshot and descendants when the root session is deleted", async () => {
+    const client = makeClient({
+      sessions: {
+        "ses-root-deleted": makeSession("ses-root-deleted", { title: "Root session" }),
+        "ses-child-deleted": makeSession("ses-child-deleted", {
+          parentID: "ses-root-deleted",
+          title: "Child session",
+        }),
+      },
+    })
+    const hooks = await plugin({ client } as never)
+
+    await hooks.event!(busyEvent("ses-root-deleted"))
+    await hooks.event!(busyEvent("ses-child-deleted"))
+    await hooks.event!(sessionDeletedEvent("ses-root-deleted") as never)
+
+    expect(existsSync(path.join(tmpDir, "ses-root-deleted.json"))).toBe(false)
+    expect(existsSync(path.join(tmpDir, "ses-child-deleted.json"))).toBe(false)
+  })
+
+  it("keeps a child snapshot when the child session is deleted", async () => {
+    const client = makeClient({
+      sessions: {
+        "ses-root-child-deleted": makeSession("ses-root-child-deleted", { title: "Root session" }),
+        "ses-child-deleted-keep": makeSession("ses-child-deleted-keep", {
+          parentID: "ses-root-child-deleted",
+          title: "Child session",
+        }),
+      },
+    })
+    const hooks = await plugin({ client } as never)
+
+    await hooks.event!(busyEvent("ses-root-child-deleted"))
+    await hooks.event!(busyEvent("ses-child-deleted-keep"))
+    await hooks.event!(sessionDeletedEvent("ses-child-deleted-keep") as never)
+
+    expect(existsSync(path.join(tmpDir, "ses-child-deleted-keep.json"))).toBe(true)
+  })
+
+  it("removes descendant snapshots before creating a replacement session with session.new", async () => {
+    const client = makeClient({
+      sessions: {
+        "ses-root-new": makeSession("ses-root-new", { title: "Old session" }),
+        "ses-child-new": makeSession("ses-child-new", {
+          parentID: "ses-root-new",
+          title: "Child session",
+        }),
+        "ses-replacement": makeSession("ses-replacement", { title: "New session" }),
+      },
+    })
+    const hooks = await plugin({ client } as never)
+
+    await hooks.event!(busyEvent("ses-root-new"))
+    await hooks.event!(busyEvent("ses-child-new"))
+    await hooks["command.execute.before"]!(commandBeforeInput("ses-root-new", "session.new") as never, { parts: [] })
+
+    expect(existsSync(path.join(tmpDir, "ses-root-new.json"))).toBe(false)
+    expect(existsSync(path.join(tmpDir, "ses-child-new.json"))).toBe(false)
+  })
+
+  it("does not recreate a child snapshot after the root topic has exited", async () => {
+    const client = makeClient({
+      sessions: {
+        "ses-root-late": makeSession("ses-root-late", { title: "Root session" }),
+        "ses-child-late": makeSession("ses-child-late", {
+          parentID: "ses-root-late",
+          title: "Child session",
+        }),
+      },
+    })
+    const hooks = await plugin({ client } as never)
+
+    await hooks.event!(busyEvent("ses-root-late"))
+    await hooks.event!(busyEvent("ses-child-late"))
+    await hooks.event!(commandExecutedEvent("ses-root-late", "/exit") as never)
+    await hooks.event!(busyEvent("ses-child-late"))
+
+    expect(existsSync(path.join(tmpDir, "ses-child-late.json"))).toBe(false)
   })
 })
