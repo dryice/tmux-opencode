@@ -2,7 +2,7 @@ import type { Plugin } from "@opencode-ai/plugin"
 import path from "node:path"
 import { defaultStatusDirectory, STATUS_DIR_ENV_KEY } from "./types"
 import type { SessionSnapshot } from "./types"
-import { deleteSnapshot, writeSnapshot } from "./status-store"
+import { deleteSnapshot, deleteSnapshotTree, readSnapshot as readStoredSnapshot, snapshotExists, writeSnapshot } from "./status-store"
 import { buildTmuxWindowName, renameTmuxWindow, resolveTmuxContext, type TmuxContext } from "./tmux"
 
 function directory(): string {
@@ -75,6 +75,10 @@ async function writeSnapshotForSession(
   projectName?: string,
   tmuxContext?: TmuxContext | null,
 ) {
+  if (session.parentID && !(await snapshotExists(directory(), session.parentID))) {
+    return
+  }
+
   const resolvedTmuxContext = tmuxContext === undefined ? await resolveTmuxContext() : tmuxContext
   await writeSnapshot(directory(), {
     version: 1,
@@ -149,7 +153,6 @@ const plugin: Plugin = async ({ client, project }) => {
 
     const desiredWindowTitle = buildTmuxWindowName({
       projectName,
-      sessionTitle: session.title,
     })
     if (!desiredWindowTitle) {
       return
@@ -162,7 +165,6 @@ const plugin: Plugin = async ({ client, project }) => {
     await renameTmuxWindow({
       tmuxWindowID: tmuxContext.tmuxWindowID,
       projectName,
-      sessionTitle: session.title,
     })
     renamedWindowTitles.set(tmuxContext.tmuxWindowID, desiredWindowTitle)
   }
@@ -188,15 +190,20 @@ const plugin: Plugin = async ({ client, project }) => {
     await writeSnapshotForSession(sessionID, session, "idle", "Session is idle", projectName, resolvedTmuxContext)
     await renameRootWindowIfNeeded(session, resolvedTmuxContext)
 
-    if (visibleRootSessionID && visibleRootSessionID !== sessionID) {
-      await deleteSnapshot(directory(), visibleRootSessionID)
+    if (visibleRootSessionID && visibleRootSessionID !== sessionID && isRootSession(session)) {
+      await removeVisibleSession(visibleRootSessionID, { cascade: true })
     }
 
     visibleRootSessionID = isRootSession(session) ? sessionID : visibleRootSessionID
   }
 
-  async function removeVisibleSession(sessionID: string) {
-    await deleteSnapshot(directory(), sessionID)
+  async function removeVisibleSession(sessionID: string, options?: { cascade?: boolean }) {
+    if (options?.cascade) {
+      await deleteSnapshotTree(directory(), sessionID)
+    } else {
+      await deleteSnapshot(directory(), sessionID)
+    }
+
     if (visibleRootSessionID === sessionID) {
       visibleRootSessionID = undefined
     }
@@ -213,7 +220,12 @@ const plugin: Plugin = async ({ client, project }) => {
       }
 
       if (event.type === "command.executed" && sessionID && isExitCommand(eventCommand(event))) {
-        await removeVisibleSession(sessionID)
+        const snapshot = await readStoredSnapshot(directory(), sessionID)
+        if (snapshot?.parentID) {
+          return
+        }
+
+        await removeVisibleSession(sessionID, { cascade: true })
         return
       }
 
@@ -227,7 +239,7 @@ const plugin: Plugin = async ({ client, project }) => {
         }
 
         if (visibleRootSessionID && visibleRootSessionID !== sessionID && isRootSession(session)) {
-          await deleteSnapshot(directory(), visibleRootSessionID)
+          await removeVisibleSession(visibleRootSessionID, { cascade: true })
         }
 
         const resolvedTmuxContext = await resolveTmuxContext()
@@ -244,7 +256,12 @@ const plugin: Plugin = async ({ client, project }) => {
       }
 
       if (event.type === "session.deleted") {
-        await removeVisibleSession(sessionID)
+        const snapshot = await readStoredSnapshot(directory(), sessionID)
+        if (snapshot?.parentID) {
+          return
+        }
+
+        await removeVisibleSession(sessionID, { cascade: true })
         return
       }
 
@@ -284,7 +301,7 @@ const plugin: Plugin = async ({ client, project }) => {
         return
       }
 
-      await removeVisibleSession(input.sessionID)
+      await removeVisibleSession(input.sessionID, { cascade: true })
     },
 
     async "permission.ask"(input) {

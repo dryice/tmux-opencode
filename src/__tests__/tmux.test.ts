@@ -61,11 +61,11 @@ describe("tmux helpers", () => {
 
     const { renameTmuxWindow } = await import(tmuxModulePath)
 
-    await renameTmuxWindow({ tmuxWindowID: "@9", projectName: "tmux-opencode\t", sessionTitle: "Main\nsession" })
+    await renameTmuxWindow({ tmuxWindowID: "@9", projectName: "tmux-opencode\t" })
 
     expect(execFileMock).toHaveBeenCalledWith(
       "tmux",
-      ["rename-window", "-t", "@9", "tmux-opencode-Main session"],
+      ["rename-window", "-t", "@9", "tmux-opencode"],
       expect.any(Function),
     )
   })
