@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { mkdtempSync, readFileSync, readdirSync, existsSync, writeFileSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { writeSnapshot, deleteSnapshot, listSnapshots } from "../status-store"
+import { writeSnapshot, deleteSnapshot, listSnapshots, snapshotExists, readSnapshot, deleteSnapshotTree } from "../status-store"
 
 describe("writeSnapshot", () => {
   it("writes an atomic session snapshot file", async () => {
@@ -85,6 +85,133 @@ describe("deleteSnapshot", () => {
   it("does not throw when deleting a non-existent snapshot", async () => {
     const directory = mkdtempSync(path.join(os.tmpdir(), "tmux-opencode-"))
     await expect(deleteSnapshot(directory, "no-such-file")).resolves.toBeUndefined()
+  })
+})
+
+describe("snapshotExists", () => {
+  it("returns true when the snapshot file exists", async () => {
+    const directory = mkdtempSync(path.join(os.tmpdir(), "tmux-opencode-"))
+    await writeSnapshot(directory, {
+      version: 1,
+      sessionID: "existing",
+      parentID: null,
+      kind: "root",
+      title: "Existing",
+      status: "working",
+      summary: "Present",
+      updatedAt: 1,
+    })
+
+    await expect(snapshotExists(directory, "existing")).resolves.toBe(true)
+  })
+
+  it("returns false when the snapshot file is missing", async () => {
+    const directory = mkdtempSync(path.join(os.tmpdir(), "tmux-opencode-"))
+
+    await expect(snapshotExists(directory, "missing")).resolves.toBe(false)
+  })
+})
+
+describe("readSnapshot", () => {
+  it("returns the parsed snapshot when the file exists", async () => {
+    const directory = mkdtempSync(path.join(os.tmpdir(), "tmux-opencode-"))
+    await writeSnapshot(directory, {
+      version: 1,
+      sessionID: "readable",
+      parentID: null,
+      kind: "root",
+      title: "Readable",
+      status: "idle",
+      summary: "Done",
+      updatedAt: 1,
+    })
+
+    await expect(readSnapshot(directory, "readable")).resolves.toEqual(
+      expect.objectContaining({ sessionID: "readable", title: "Readable" }),
+    )
+  })
+
+  it("returns null when the snapshot file is missing", async () => {
+    const directory = mkdtempSync(path.join(os.tmpdir(), "tmux-opencode-"))
+
+    await expect(readSnapshot(directory, "missing")).resolves.toBeNull()
+  })
+
+  it("returns null when the snapshot file is malformed", async () => {
+    const directory = mkdtempSync(path.join(os.tmpdir(), "tmux-opencode-"))
+    writeFileSync(path.join(directory, "broken.json"), "{not valid json}\n", "utf8")
+
+    await expect(readSnapshot(directory, "broken")).resolves.toBeNull()
+  })
+})
+
+describe("deleteSnapshotTree", () => {
+  it("deletes the root snapshot and all descendants", async () => {
+    const directory = mkdtempSync(path.join(os.tmpdir(), "tmux-opencode-"))
+    await writeSnapshot(directory, {
+      version: 1,
+      sessionID: "root",
+      parentID: null,
+      kind: "root",
+      title: "Root",
+      status: "working",
+      summary: "Active",
+      updatedAt: 1,
+    })
+    await writeSnapshot(directory, {
+      version: 1,
+      sessionID: "child",
+      parentID: "root",
+      kind: "subagent",
+      title: "Child",
+      status: "working",
+      summary: "Active",
+      updatedAt: 1,
+    })
+    await writeSnapshot(directory, {
+      version: 1,
+      sessionID: "grandchild",
+      parentID: "child",
+      kind: "subagent",
+      title: "Grandchild",
+      status: "working",
+      summary: "Active",
+      updatedAt: 1,
+    })
+    await writeSnapshot(directory, {
+      version: 1,
+      sessionID: "other-root",
+      parentID: null,
+      kind: "root",
+      title: "Other root",
+      status: "idle",
+      summary: "Other",
+      updatedAt: 1,
+    })
+    await writeSnapshot(directory, {
+      version: 1,
+      sessionID: "other-child",
+      parentID: "other-root",
+      kind: "subagent",
+      title: "Other child",
+      status: "idle",
+      summary: "Other",
+      updatedAt: 1,
+    })
+
+    await deleteSnapshotTree(directory, "root")
+
+    expect(existsSync(path.join(directory, "root.json"))).toBe(false)
+    expect(existsSync(path.join(directory, "child.json"))).toBe(false)
+    expect(existsSync(path.join(directory, "grandchild.json"))).toBe(false)
+    expect(existsSync(path.join(directory, "other-root.json"))).toBe(true)
+    expect(existsSync(path.join(directory, "other-child.json"))).toBe(true)
+  })
+
+  it("does not throw when the root snapshot is already missing", async () => {
+    const directory = mkdtempSync(path.join(os.tmpdir(), "tmux-opencode-"))
+
+    await expect(deleteSnapshotTree(directory, "missing-root")).resolves.toBeUndefined()
   })
 })
 
