@@ -244,7 +244,7 @@ describe("tmux-opencode plugin", () => {
     renameTmuxWindowMock.mockReset()
     buildTmuxWindowNameMock.mockReset()
     resolveTmuxContextMock.mockResolvedValue(null)
-    buildTmuxWindowNameMock.mockImplementation(({ projectName }: { projectName: string; sessionTitle: string }) => {
+    buildTmuxWindowNameMock.mockImplementation(({ projectName }: { projectName: string }) => {
       const sanitize = (value: string, maxLength: number) =>
         value
           .replace(/[\r\n\t]+/g, " ")

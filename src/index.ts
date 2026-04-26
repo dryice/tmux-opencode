@@ -75,7 +75,7 @@ async function writeSnapshotForSession(
   projectName?: string,
   tmuxContext?: TmuxContext | null,
 ) {
-  if (session.parentID && !await snapshotExists(directory(), session.parentID)) {
+  if (session.parentID && !(await snapshotExists(directory(), session.parentID))) {
     return
   }
 
