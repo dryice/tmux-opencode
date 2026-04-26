@@ -153,7 +153,6 @@ const plugin: Plugin = async ({ client, project }) => {
 
     const desiredWindowTitle = buildTmuxWindowName({
       projectName,
-      sessionTitle: session.title,
     })
     if (!desiredWindowTitle) {
       return
@@ -166,7 +165,6 @@ const plugin: Plugin = async ({ client, project }) => {
     await renameTmuxWindow({
       tmuxWindowID: tmuxContext.tmuxWindowID,
       projectName,
-      sessionTitle: session.title,
     })
     renamedWindowTitles.set(tmuxContext.tmuxWindowID, desiredWindowTitle)
   }
@@ -192,8 +190,8 @@ const plugin: Plugin = async ({ client, project }) => {
     await writeSnapshotForSession(sessionID, session, "idle", "Session is idle", projectName, resolvedTmuxContext)
     await renameRootWindowIfNeeded(session, resolvedTmuxContext)
 
-    if (visibleRootSessionID && visibleRootSessionID !== sessionID) {
-      await deleteSnapshot(directory(), visibleRootSessionID)
+    if (visibleRootSessionID && visibleRootSessionID !== sessionID && isRootSession(session)) {
+      await removeVisibleSession(visibleRootSessionID, { cascade: true })
     }
 
     visibleRootSessionID = isRootSession(session) ? sessionID : visibleRootSessionID
@@ -241,7 +239,7 @@ const plugin: Plugin = async ({ client, project }) => {
         }
 
         if (visibleRootSessionID && visibleRootSessionID !== sessionID && isRootSession(session)) {
-          await deleteSnapshot(directory(), visibleRootSessionID)
+          await removeVisibleSession(visibleRootSessionID, { cascade: true })
         }
 
         const resolvedTmuxContext = await resolveTmuxContext()

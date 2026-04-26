@@ -332,7 +332,6 @@ describe("tmux-opencode plugin", () => {
     expect(renameTmuxWindowMock).toHaveBeenCalledWith({
       tmuxWindowID: "@4",
       projectName: "tmux-opencode",
-      sessionTitle: "Main session",
     })
   })
 
@@ -663,10 +662,36 @@ describe("tmux-opencode plugin", () => {
     expect(existsSync(path.join(tmpDir, "ses-other.json"))).toBe(true)
   })
 
+  it("removes the previous root snapshot tree when a new root session is created", async () => {
+    const client = makeClient({
+      sessions: {
+        "ses-old-root": makeSession("ses-old-root", { title: "Old root" }),
+        "ses-old-child": makeSession("ses-old-child", {
+          parentID: "ses-old-root",
+          title: "Old child",
+        }),
+        "ses-new-root": makeSession("ses-new-root", { title: "New root" }),
+      },
+    })
+    const hooks = await plugin({ client } as never)
+
+    await hooks.event!(busyEvent("ses-old-root"))
+    await hooks.event!(busyEvent("ses-old-child"))
+    await hooks.event!(sessionCreatedEvent("ses-new-root", "New root") as never)
+
+    expect(existsSync(path.join(tmpDir, "ses-old-root.json"))).toBe(false)
+    expect(existsSync(path.join(tmpDir, "ses-old-child.json"))).toBe(false)
+    expect(existsSync(path.join(tmpDir, "ses-new-root.json"))).toBe(true)
+  })
+
   it("replaces the visible session snapshot when selecting another session", async () => {
     const client = makeClient({
       sessions: {
         "ses-current": makeSession("ses-current", { title: "Current session" }),
+        "ses-current-child": makeSession("ses-current-child", {
+          parentID: "ses-current",
+          title: "Current child",
+        }),
         "ses-selected": makeSession("ses-selected", { title: "Selected session" }),
       },
     })
@@ -675,16 +700,38 @@ describe("tmux-opencode plugin", () => {
 
     await otherHooks.event!(busyEvent("ses-other"))
     await hooks.event!(busyEvent("ses-current"))
+    await hooks.event!(busyEvent("ses-current-child"))
 
     await hooks.event!(sessionSelectEvent("ses-selected") as never)
 
     expect(existsSync(path.join(tmpDir, "ses-current.json"))).toBe(false)
+    expect(existsSync(path.join(tmpDir, "ses-current-child.json"))).toBe(false)
     expect(existsSync(path.join(tmpDir, "ses-other.json"))).toBe(true)
 
     const snap = readSnapshot(tmpDir, "ses-selected")
     expect(snap.status).toBe("idle")
     expect(snap.summary).toContain("idle")
     expect(snap.title).toBe("Selected session")
+  })
+
+  it("keeps the root snapshot when selecting one of its child sessions", async () => {
+    const client = makeClient({
+      sessions: {
+        "ses-root-selected-child": makeSession("ses-root-selected-child", { title: "Root session" }),
+        "ses-selected-child": makeSession("ses-selected-child", {
+          parentID: "ses-root-selected-child",
+          title: "Selected child",
+        }),
+      },
+    })
+    const hooks = await plugin({ client } as never)
+
+    await hooks.event!(busyEvent("ses-root-selected-child"))
+    await hooks.event!(sessionSelectEvent("ses-selected-child") as never)
+    await hooks.event!(busyEvent("ses-selected-child"))
+
+    expect(existsSync(path.join(tmpDir, "ses-root-selected-child.json"))).toBe(true)
+    expect(existsSync(path.join(tmpDir, "ses-selected-child.json"))).toBe(true)
   })
 
   it("deletes only the local session snapshot for an exit command", async () => {
