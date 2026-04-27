@@ -872,4 +872,45 @@ describe("tmux-opencode plugin", () => {
 
     expect(existsSync(path.join(tmpDir, "ses-child-late.json"))).toBe(false)
   })
+
+  it("uses a consistent status directory across child snapshot existence and write checks", async () => {
+    vi.resetModules()
+
+    const originalStatusDir = tmpDir
+    const swappedStatusDir = mkdtempSync(path.join(os.tmpdir(), "tmux-opencode-plugin-swap-"))
+    let snapshotExistsDirectory: string | undefined
+    let writeSnapshotDirectory: string | undefined
+
+    vi.doMock("../status-store", () => ({
+      deleteSnapshot: vi.fn(),
+      deleteSnapshotTree: vi.fn(),
+      readSnapshot: vi.fn(),
+      snapshotExists: vi.fn(async (directory: string) => {
+        snapshotExistsDirectory = directory
+        process.env[STATUS_DIR_ENV_KEY] = swappedStatusDir
+        return true
+      }),
+      writeSnapshot: vi.fn(async (directory: string) => {
+        writeSnapshotDirectory = directory
+      }),
+    }))
+
+    const { default: isolatedPlugin } = await import("../index")
+    const client = makeClient({
+      sessions: {
+        "ses-root-consistent": makeSession("ses-root-consistent", { title: "Root session" }),
+        "ses-child-consistent": makeSession("ses-child-consistent", {
+          parentID: "ses-root-consistent",
+          title: "Child session",
+        }),
+      },
+    })
+    const hooks = await isolatedPlugin({ client } as never)
+
+    process.env[STATUS_DIR_ENV_KEY] = originalStatusDir
+    await hooks.event!(busyEvent("ses-child-consistent"))
+
+    expect(snapshotExistsDirectory).toBe(originalStatusDir)
+    expect(writeSnapshotDirectory).toBe(originalStatusDir)
+  })
 })

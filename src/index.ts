@@ -75,12 +75,14 @@ async function writeSnapshotForSession(
   projectName?: string,
   tmuxContext?: TmuxContext | null,
 ) {
-  if (session.parentID && !(await snapshotExists(directory(), session.parentID))) {
+  const statusDir = directory()
+
+  if (session.parentID && !(await snapshotExists(statusDir, session.parentID))) {
     return
   }
 
   const resolvedTmuxContext = tmuxContext === undefined ? await resolveTmuxContext() : tmuxContext
-  await writeSnapshot(directory(), {
+  await writeSnapshot(statusDir, {
     version: 1,
     sessionID,
     parentID: session.parentID ?? null,
