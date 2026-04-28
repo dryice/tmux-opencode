@@ -2,7 +2,7 @@ import type { Plugin } from "@opencode-ai/plugin"
 import path from "node:path"
 import { defaultStatusDirectory, STATUS_DIR_ENV_KEY } from "./types"
 import type { SessionSnapshot } from "./types"
-import { deleteSnapshot, writeSnapshot } from "./status-store"
+import { deleteSnapshot, deleteSnapshotTree, readSnapshot as readStoredSnapshot, snapshotExists, writeSnapshot } from "./status-store"
 import { buildTmuxWindowName, renameTmuxWindow, resolveTmuxContext, type TmuxContext } from "./tmux"
 
 function directory(): string {
@@ -74,9 +74,14 @@ async function writeSnapshotForSession(
   summary: string,
   projectName?: string,
   tmuxContext?: TmuxContext | null,
+  statusDir: string = directory(),
 ) {
+  if (session.parentID && !(await snapshotExists(statusDir, session.parentID))) {
+    return
+  }
+
   const resolvedTmuxContext = tmuxContext === undefined ? await resolveTmuxContext() : tmuxContext
-  await writeSnapshot(directory(), {
+  await writeSnapshot(statusDir, {
     version: 1,
     sessionID,
     parentID: session.parentID ?? null,
@@ -97,12 +102,13 @@ async function writeCurrentSnapshot(
   summary: string,
   projectName?: string,
   tmuxContext?: TmuxContext | null,
+  statusDir: string = directory(),
 ) {
   const session = await readSession(client, sessionID)
   if (!session) return null
 
   const resolvedTmuxContext = tmuxContext === undefined ? await resolveTmuxContext() : tmuxContext
-  await writeSnapshotForSession(sessionID, session, status, summary, projectName, resolvedTmuxContext)
+  await writeSnapshotForSession(sessionID, session, status, summary, projectName, resolvedTmuxContext, statusDir)
   return session
 }
 
@@ -149,7 +155,6 @@ const plugin: Plugin = async ({ client, project }) => {
 
     const desiredWindowTitle = buildTmuxWindowName({
       projectName,
-      sessionTitle: session.title,
     })
     if (!desiredWindowTitle) {
       return
@@ -162,7 +167,6 @@ const plugin: Plugin = async ({ client, project }) => {
     await renameTmuxWindow({
       tmuxWindowID: tmuxContext.tmuxWindowID,
       projectName,
-      sessionTitle: session.title,
     })
     renamedWindowTitles.set(tmuxContext.tmuxWindowID, desiredWindowTitle)
   }
@@ -171,32 +175,38 @@ const plugin: Plugin = async ({ client, project }) => {
     sessionID: string,
     status: SessionSnapshot["status"],
     summary: string,
+    statusDir: string,
   ) {
     const resolvedTmuxContext = await resolveTmuxContext()
-    const session = await writeCurrentSnapshot(client, sessionID, status, summary, projectName, resolvedTmuxContext)
+    const session = await writeCurrentSnapshot(client, sessionID, status, summary, projectName, resolvedTmuxContext, statusDir)
     if (session && isRootSession(session)) {
       await renameRootWindowIfNeeded(session, resolvedTmuxContext)
       visibleRootSessionID = sessionID
     }
   }
 
-  async function showVisibleSession(sessionID: string) {
+  async function showVisibleSession(sessionID: string, statusDir: string) {
     const session = await readSession(client, sessionID)
     if (!session) return
 
     const resolvedTmuxContext = await resolveTmuxContext()
-    await writeSnapshotForSession(sessionID, session, "idle", "Session is idle", projectName, resolvedTmuxContext)
+    await writeSnapshotForSession(sessionID, session, "idle", "Session is idle", projectName, resolvedTmuxContext, statusDir)
     await renameRootWindowIfNeeded(session, resolvedTmuxContext)
 
-    if (visibleRootSessionID && visibleRootSessionID !== sessionID) {
-      await deleteSnapshot(directory(), visibleRootSessionID)
+    if (visibleRootSessionID && visibleRootSessionID !== sessionID && isRootSession(session)) {
+      await removeVisibleSession(visibleRootSessionID, { cascade: true }, statusDir)
     }
 
     visibleRootSessionID = isRootSession(session) ? sessionID : visibleRootSessionID
   }
 
-  async function removeVisibleSession(sessionID: string) {
-    await deleteSnapshot(directory(), sessionID)
+  async function removeVisibleSession(sessionID: string, options: { cascade?: boolean } = {}, statusDir: string = directory()) {
+    if (options?.cascade) {
+      await deleteSnapshotTree(statusDir, sessionID)
+    } else {
+      await deleteSnapshot(statusDir, sessionID)
+    }
+
     if (visibleRootSessionID === sessionID) {
       visibleRootSessionID = undefined
     }
@@ -206,14 +216,20 @@ const plugin: Plugin = async ({ client, project }) => {
     async event(input) {
       const event = input.event as PluginEvent
       const sessionID = eventSessionID(event)
+      const statusDir = directory()
 
       if (event.type === "tui.session.select" && sessionID) {
-        await showVisibleSession(sessionID)
+        await showVisibleSession(sessionID, statusDir)
         return
       }
 
       if (event.type === "command.executed" && sessionID && isExitCommand(eventCommand(event))) {
-        await removeVisibleSession(sessionID)
+        const snapshot = await readStoredSnapshot(statusDir, sessionID)
+        if (snapshot?.parentID) {
+          return
+        }
+
+        await removeVisibleSession(sessionID, { cascade: true }, statusDir)
         return
       }
 
@@ -227,11 +243,11 @@ const plugin: Plugin = async ({ client, project }) => {
         }
 
         if (visibleRootSessionID && visibleRootSessionID !== sessionID && isRootSession(session)) {
-          await deleteSnapshot(directory(), visibleRootSessionID)
+          await removeVisibleSession(visibleRootSessionID, { cascade: true }, statusDir)
         }
 
         const resolvedTmuxContext = await resolveTmuxContext()
-        await writeSnapshotForSession(sessionID, session, "idle", "Session is idle", projectName, resolvedTmuxContext)
+        await writeSnapshotForSession(sessionID, session, "idle", "Session is idle", projectName, resolvedTmuxContext, statusDir)
         await renameRootWindowIfNeeded(session, resolvedTmuxContext)
         if (isRootSession(session)) {
           visibleRootSessionID = sessionID
@@ -244,12 +260,17 @@ const plugin: Plugin = async ({ client, project }) => {
       }
 
       if (event.type === "session.deleted") {
-        await removeVisibleSession(sessionID)
+        const snapshot = await readStoredSnapshot(statusDir, sessionID)
+        if (snapshot?.parentID) {
+          return
+        }
+
+        await removeVisibleSession(sessionID, { cascade: true }, statusDir)
         return
       }
 
       if (event.type === "session.idle") {
-        await rememberVisibleRootSnapshot(sessionID, "idle", "Session is idle")
+        await rememberVisibleRootSnapshot(sessionID, "idle", "Session is idle", statusDir)
         return
       }
 
@@ -257,24 +278,24 @@ const plugin: Plugin = async ({ client, project }) => {
         const status = eventStatusType(event)
 
         if (status === "idle") {
-          await rememberVisibleRootSnapshot(sessionID, "idle", "Session is idle")
+          await rememberVisibleRootSnapshot(sessionID, "idle", "Session is idle", statusDir)
           return
         }
 
         if (status === "busy" || status === "retry") {
-          await rememberVisibleRootSnapshot(sessionID, "working", "Session is busy")
+          await rememberVisibleRootSnapshot(sessionID, "working", "Session is busy", statusDir)
         }
 
         return
       }
 
       if (event.type === "question.asked") {
-        await rememberVisibleRootSnapshot(sessionID, "question", "Question asked")
+        await rememberVisibleRootSnapshot(sessionID, "question", "Question asked", statusDir)
         return
       }
 
       if (event.type === "permission.asked") {
-        await rememberVisibleRootSnapshot(sessionID, "waiting", `Permission required: ${event.properties?.type ?? "unknown"}`)
+        await rememberVisibleRootSnapshot(sessionID, "waiting", `Permission required: ${event.properties?.type ?? "unknown"}`, statusDir)
         return
       }
     },
@@ -284,11 +305,11 @@ const plugin: Plugin = async ({ client, project }) => {
         return
       }
 
-      await removeVisibleSession(input.sessionID)
+      await removeVisibleSession(input.sessionID, { cascade: true }, directory())
     },
 
     async "permission.ask"(input) {
-      await rememberVisibleRootSnapshot(input.sessionID, "waiting", `Permission required: ${input.type}`)
+      await rememberVisibleRootSnapshot(input.sessionID, "waiting", `Permission required: ${input.type}`, directory())
     },
   }
 }
