@@ -913,4 +913,36 @@ describe("tmux-opencode plugin", () => {
     expect(snapshotExistsDirectory).toBe(originalStatusDir)
     expect(writeSnapshotDirectory).toBe(originalStatusDir)
   })
+
+  it("uses a consistent status directory across root snapshot reads and cleanup", async () => {
+    vi.resetModules()
+
+    const originalStatusDir = tmpDir
+    const swappedStatusDir = mkdtempSync(path.join(os.tmpdir(), "tmux-opencode-plugin-swap-"))
+    let readSnapshotDirectory: string | undefined
+    let deleteSnapshotTreeDirectory: string | undefined
+
+    vi.doMock("../status-store", () => ({
+      deleteSnapshot: vi.fn(),
+      deleteSnapshotTree: vi.fn(async (directory: string) => {
+        deleteSnapshotTreeDirectory = directory
+      }),
+      readSnapshot: vi.fn(async (directory: string) => {
+        readSnapshotDirectory = directory
+        process.env[STATUS_DIR_ENV_KEY] = swappedStatusDir
+        return { parentID: null }
+      }),
+      snapshotExists: vi.fn(async () => true),
+      writeSnapshot: vi.fn(),
+    }))
+
+    const { default: isolatedPlugin } = await import("../index")
+    const hooks = await isolatedPlugin({ client: makeClient({ title: "Root session" }) } as never)
+
+    process.env[STATUS_DIR_ENV_KEY] = originalStatusDir
+    await hooks.event!(commandExecutedEvent("ses-root-consistent-dir", "/exit") as never)
+
+    expect(readSnapshotDirectory).toBe(originalStatusDir)
+    expect(deleteSnapshotTreeDirectory).toBe(originalStatusDir)
+  })
 })
