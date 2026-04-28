@@ -152,7 +152,7 @@ Subagents are prefixed with `- ` when shown.
 - `session.idle` also writes `idle`.
 - `question.asked` writes `question`.
 - `permission.asked` and the `permission.ask` hook write `waiting` with the permission type in the summary.
-- `tui.session.select` switches the visible root session for that plugin instance and writes an `idle` snapshot for the selected session.
+- `tui.session.select` selecting a root session replaces the previous visible root for that plugin instance; selecting a child session keeps the existing visible root and only writes an `idle` snapshot for the child.
 - `session.new` removes the current root snapshot and every descendant snapshot before the replacement session is created.
 - `/exit` and other `*.exit` commands remove the current root snapshot and all descendant snapshots; child-session exits are left visible until the root topic is cleared.
 - `session.deleted` removes the root snapshot tree; child-session deletions are left visible until the root topic is cleared.
