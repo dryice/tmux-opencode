@@ -513,6 +513,35 @@ fi
 
 rm -f "$INTERACTIVE_DIR/logs/fzf-stdin.txt" "$INTERACTIVE_DIR/logs/fzf-args.txt" "$INTERACTIVE_DIR/logs/fzf-selection.txt" "$INTERACTIVE_DIR/logs/tmux-calls.txt"
 
+cat > "$INTERACTIVE_DIR/bin/python3" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1:-}" == *"scripts/prune_stale_snapshots.py" ]]; then
+  printf 'simulated prune failure\n' >&2
+  exit 23
+fi
+
+exec "${TMUX_TEST_REAL_PYTHON:?missing TMUX_TEST_REAL_PYTHON}" "$@"
+EOF
+chmod +x "$INTERACTIVE_DIR/bin/python3"
+
+set +e
+prune_failure_output="$(PATH="$INTERACTIVE_DIR/bin:$PATH" TMUX_TEST_REAL_PYTHON="$(command -v python3)" TMUX_TEST_LOG_DIR="$INTERACTIVE_DIR/logs" TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" FZF_SELECTION=$'root-1\troot\tworking\ttmux-opencode\tMain session\t$9\t@11\t%42' bash "$ROOT_DIR/scripts/popup_command.sh" 2>&1 <<< 'x')"
+prune_failure_status=$?
+set -e
+
+if [[ $prune_failure_status -ne 0 ]]; then
+  printf 'Expected popup_command.sh to continue when stale snapshot pruning fails\nActual status: %s\nActual output:\n%s\n' "$prune_failure_status" "$prune_failure_output" >&2
+  exit 1
+fi
+
+assert_contains "$prune_failure_output" "prune_stale_snapshots.py failed with exit code 23"
+assert_file_exists "$INTERACTIVE_DIR/logs/tmux-calls.txt"
+assert_tmux_call_sequence "$INTERACTIVE_DIR/logs/tmux-calls.txt" '$9' '@11' '%42'
+
+rm -f "$INTERACTIVE_DIR/bin/python3" "$INTERACTIVE_DIR/logs/fzf-stdin.txt" "$INTERACTIVE_DIR/logs/fzf-args.txt" "$INTERACTIVE_DIR/logs/fzf-selection.txt" "$INTERACTIVE_DIR/logs/tmux-calls.txt"
+
 PATH="$INTERACTIVE_DIR/bin:$PATH" TMUX_TEST_LOG_DIR="$INTERACTIVE_DIR/logs" TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" FZF_SELECTION=$'root-1\troot\tworking\ttmux-opencode\tMain session\t$9\t@11\t%42' FZF_EXIT_CODE=130 bash "$ROOT_DIR/scripts/popup_command.sh" <<< 'x'
 
 assert_file_exists "$INTERACTIVE_DIR/logs/fzf-stdin.txt"

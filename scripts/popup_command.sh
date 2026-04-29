@@ -9,7 +9,17 @@ if ! command -v fzf >/dev/null 2>&1; then
   exit 1
 fi
 
-python3 "$CURRENT_DIR/prune_stale_snapshots.py"
+set +e
+prune_output="$(python3 "$CURRENT_DIR/prune_stale_snapshots.py" 2>&1)"
+prune_status=$?
+set -e
+
+if [[ $prune_status -ne 0 ]]; then
+  printf 'prune_stale_snapshots.py failed with exit code %s\n' "$prune_status" >&2
+  if [[ -n "$prune_output" ]]; then
+    printf '%s\n' "$prune_output" >&2
+  fi
+fi
 
 set +e
 machine_output="$(TMUX_OPENCODE_RENDER_MODE=machine bash "$CURRENT_DIR/render_status.sh")"
