@@ -53,6 +53,7 @@ The writer uses these snapshot fields:
 - `kind`
 - `title`
 - `projectName` (optional)
+- `processPID` (root snapshots only)
 - `tmuxSessionID` (optional)
 - `tmuxWindowID` (optional)
 - `tmuxPaneID` (optional)
@@ -137,7 +138,7 @@ prefix + I
 
 The tmux entrypoint is `tmux-opencode.tmux`. It binds the configured key to `scripts/show_popup.sh`, which opens a tmux popup and runs `scripts/popup_command.sh`.
 
-The popup uses stored tmux metadata to jump to the selected tmux session, window, and pane. `fzf` displays and matches against the session status, project name, and title. The human-readable rows look like this:
+The popup first prunes stale root snapshot trees, then uses stored tmux metadata to jump to the selected tmux session, window, and pane. `fzf` displays and matches against the session status, project name, and title. The human-readable rows look like this:
 
 ```text
 <status> <projectName> <title>
@@ -168,6 +169,8 @@ Subagents are prefixed with `- ` when shown.
 - Child snapshots keep their `parentID` relationship and remain on disk until the owning root session exits or is replaced with `/new`.
 - Snapshots from other running OpenCode instances are left alone until those instances explicitly update or remove them.
 - The popup requires `fzf`. If `fzf` is unavailable, the popup exits with a short error.
+- Before showing `fzf`, the popup removes stale root snapshot trees when the stored root `processPID` is no longer running or the stored tmux session/window/pane IDs no longer exist.
+- Legacy snapshots without `processPID` or complete tmux metadata are kept visible; pruning only applies when the snapshot has enough metadata to prove the owner is gone.
 - Pressing Enter on a selectable row jumps to the stored tmux session, window, and pane.
 - Canceling `fzf` exits cleanly without changing tmux state.
 - Selecting a row that lacks tmux metadata fails safely with a short error.
