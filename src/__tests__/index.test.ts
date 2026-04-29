@@ -309,6 +309,22 @@ describe("tmux-opencode plugin", () => {
     expect(snap.tmuxPaneID).toBe("%5")
   })
 
+  it("writes the current process pid only into root snapshots", async () => {
+    const client = makeClient({
+      sessions: {
+        "ses-root-pid": makeSession("ses-root-pid", { title: "Root session" }),
+        "ses-child-pid": makeSession("ses-child-pid", { parentID: "ses-root-pid", title: "Child session" }),
+      },
+    })
+    const hooks = await plugin({ client } as never)
+
+    await hooks.event!(busyEvent("ses-root-pid"))
+    await hooks.event!(busyEvent("ses-child-pid"))
+
+    expect(readSnapshot(tmpDir, "ses-root-pid").processPID).toBe(process.pid)
+    expect(readSnapshot(tmpDir, "ses-child-pid").processPID).toBeUndefined()
+  })
+
   it("does not re-resolve tmux context when the caller already knows it is unavailable", async () => {
     const client = makeClient({ title: "Coding task" })
     const hooks = await plugin({ client, project: { name: "my-project", worktree: "/tmp/my-project" } } as never)
