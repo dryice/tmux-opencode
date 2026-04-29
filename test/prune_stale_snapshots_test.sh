@@ -138,4 +138,45 @@ assert_file_not_exists "$WORK_DIR/dead-tmux-root.json"
 assert_file_not_exists "$WORK_DIR/dead-tmux-child.json"
 assert_file_exists "$WORK_DIR/legacy-root.json"
 
+cat > "$WORK_DIR/slow-tmux.json" <<'JSON'
+{
+  "version": 1,
+  "sessionID": "slow-tmux-root",
+  "parentID": null,
+  "kind": "root",
+  "title": "Slow tmux root",
+  "projectName": "tmux-opencode",
+  "status": "working",
+  "summary": "Prune test",
+  "tmuxSessionID": "$slow",
+  "tmuxWindowID": "@slow",
+  "tmuxPaneID": "%slow",
+  "updatedAt": 4102444809999
+}
+JSON
+
+cat > "$WORK_DIR/bin/tmux" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+sleep 5
+exit 0
+EOF
+chmod +x "$WORK_DIR/bin/tmux"
+
+PATH="$WORK_DIR/bin:$PATH" TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" python3 - "$ROOT_DIR/scripts/prune_stale_snapshots.py" <<'PY'
+import subprocess
+import sys
+
+try:
+    completed = subprocess.run([sys.executable, sys.argv[1]], timeout=3, check=False)
+except subprocess.TimeoutExpired:
+    print("prune script hung on slow tmux", file=sys.stderr)
+    sys.exit(124)
+
+sys.exit(completed.returncode)
+PY
+
+assert_file_not_exists "$WORK_DIR/slow-tmux.json"
+
 printf 'prune_stale_snapshots_test.sh: PASS\n'

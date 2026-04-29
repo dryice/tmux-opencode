@@ -1,7 +1,11 @@
 import json
 import os
 import subprocess
+from collections import deque
 from pathlib import Path
+
+
+TMUX_TIMEOUT_SECONDS = 1
 
 
 def status_directory() -> Path:
@@ -44,11 +48,11 @@ def build_children(snapshots):
 
 
 def delete_snapshot_tree(root_id: str, paths, children) -> None:
-    pending = [root_id]
+    pending = deque([root_id])
     seen = {root_id}
 
     while pending:
-        session_id = pending.pop(0)
+        session_id = pending.popleft()
         path = paths.get(session_id)
         if path is not None:
             try:
@@ -83,8 +87,15 @@ def pid_is_alive(payload) -> bool:
 
 def tmux_output(args):
     try:
-        completed = subprocess.run(["tmux", *args], capture_output=True, text=True, check=False)
-    except FileNotFoundError:
+        completed = subprocess.run(
+            ["tmux", *args],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            timeout=TMUX_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return None
 
     if completed.returncode != 0:
