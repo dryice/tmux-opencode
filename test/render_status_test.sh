@@ -425,6 +425,20 @@ cat > "$INTERACTIVE_DIR/bin/tmux" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "$1" == "has-session" && "${2:-}" == "-t" && "${3:-}" == '$9' ]]; then
+  exit 0
+fi
+
+if [[ "$1" == "list-windows" && "${2:-}" == "-t" && "${3:-}" == '$9' ]]; then
+  printf '@11\n'
+  exit 0
+fi
+
+if [[ "$1" == "list-panes" && "${2:-}" == "-t" && "${3:-}" == '@11' ]]; then
+  printf '%%42\n'
+  exit 0
+fi
+
 log_dir="${TMUX_TEST_LOG_DIR:?missing TMUX_TEST_LOG_DIR}"
 printf '%s\n' "$*" >> "$log_dir/tmux-calls.txt"
 EOF
@@ -447,6 +461,20 @@ mkdir -p "$REAL_FZF_DIR/bin" "$REAL_FZF_DIR/logs"
 cat > "$REAL_FZF_DIR/bin/tmux" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+
+if [[ "$1" == "has-session" && "${2:-}" == "-t" && "${3:-}" == '$9' ]]; then
+  exit 0
+fi
+
+if [[ "$1" == "list-windows" && "${2:-}" == "-t" && "${3:-}" == '$9' ]]; then
+  printf '@11\n'
+  exit 0
+fi
+
+if [[ "$1" == "list-panes" && "${2:-}" == "-t" && "${3:-}" == '@11' ]]; then
+  printf '%%42\n'
+  exit 0
+fi
 
 log_dir="${TMUX_TEST_LOG_DIR:?missing TMUX_TEST_LOG_DIR}"
 printf '%s\n' "$*" >> "$log_dir/tmux-calls.txt"

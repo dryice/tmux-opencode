@@ -9,6 +9,8 @@ if ! command -v fzf >/dev/null 2>&1; then
   exit 1
 fi
 
+python3 "$CURRENT_DIR/prune_stale_snapshots.py"
+
 set +e
 machine_output="$(TMUX_OPENCODE_RENDER_MODE=machine bash "$CURRENT_DIR/render_status.sh")"
 render_status_status=$?
