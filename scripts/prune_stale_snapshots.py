@@ -9,7 +9,12 @@ TMUX_TIMEOUT_SECONDS = 1
 
 
 def status_directory() -> Path:
-    return Path(os.environ.get("TMUX_OPENCODE_STATUS_DIR", Path(os.environ.get("TMPDIR", "/tmp")) / "opencode-status"))
+    configured = os.environ.get("TMUX_OPENCODE_STATUS_DIR")
+    if configured is not None:
+        configured = configured.strip()
+    if configured:
+        return Path(configured)
+    return Path(os.environ.get("TMPDIR", "/tmp")) / "opencode-status"
 
 
 def read_snapshots(status_dir: Path):

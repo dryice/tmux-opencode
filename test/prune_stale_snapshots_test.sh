@@ -179,4 +179,70 @@ PY
 
 assert_file_not_exists "$WORK_DIR/slow-tmux.json"
 
+EMPTY_ENV_DIR="$WORK_DIR/empty-env"
+mkdir -p "$EMPTY_ENV_DIR"
+
+cat > "$EMPTY_ENV_DIR/repo-root-danger.json" <<'JSON'
+{
+  "version": 1,
+  "sessionID": "repo-root-danger",
+  "parentID": null,
+  "kind": "root",
+  "title": "Repo root danger",
+  "processPID": 99999999,
+  "status": "working",
+  "summary": "Should not be touched",
+  "updatedAt": 4102444810000
+}
+JSON
+
+TMPDIR="$EMPTY_ENV_DIR" python3 - "$ROOT_DIR/scripts/prune_stale_snapshots.py" <<'PY'
+import os
+import subprocess
+import sys
+
+completed = subprocess.run(
+    [sys.executable, sys.argv[1]],
+    cwd=os.environ["TMPDIR"],
+    env={**os.environ, "TMUX_OPENCODE_STATUS_DIR": ""},
+    check=False,
+)
+sys.exit(completed.returncode)
+PY
+
+assert_file_exists "$EMPTY_ENV_DIR/repo-root-danger.json"
+
+WHITESPACE_FALLBACK_DIR="$WORK_DIR/whitespace-fallback"
+mkdir -p "$WHITESPACE_FALLBACK_DIR/opencode-status"
+
+cat > "$WHITESPACE_FALLBACK_DIR/opencode-status/whitespace-fallback.json" <<'JSON'
+{
+  "version": 1,
+  "sessionID": "whitespace-fallback",
+  "parentID": null,
+  "kind": "root",
+  "title": "Whitespace fallback",
+  "processPID": 99999999,
+  "status": "working",
+  "summary": "Should be pruned via TMPDIR fallback",
+  "updatedAt": 4102444810001
+}
+JSON
+
+TMPDIR="$WHITESPACE_FALLBACK_DIR" python3 - "$ROOT_DIR/scripts/prune_stale_snapshots.py" <<'PY'
+import os
+import subprocess
+import sys
+
+completed = subprocess.run(
+    [sys.executable, sys.argv[1]],
+    cwd=os.environ["TMPDIR"],
+    env={**os.environ, "TMUX_OPENCODE_STATUS_DIR": "   "},
+    check=False,
+)
+sys.exit(completed.returncode)
+PY
+
+assert_file_not_exists "$WHITESPACE_FALLBACK_DIR/opencode-status/whitespace-fallback.json"
+
 printf 'prune_stale_snapshots_test.sh: PASS\n'
