@@ -174,10 +174,14 @@ except subprocess.TimeoutExpired:
     print("prune script hung on slow tmux", file=sys.stderr)
     sys.exit(124)
 
-sys.exit(completed.returncode)
+if completed.returncode == 0:
+    print("expected slow tmux to fail pruning", file=sys.stderr)
+    sys.exit(1)
+
+sys.exit(0)
 PY
 
-assert_file_not_exists "$WORK_DIR/slow-tmux.json"
+assert_file_exists "$WORK_DIR/slow-tmux.json"
 
 EMPTY_ENV_DIR="$WORK_DIR/empty-env"
 mkdir -p "$EMPTY_ENV_DIR"
@@ -244,5 +248,125 @@ sys.exit(completed.returncode)
 PY
 
 assert_file_not_exists "$WHITESPACE_FALLBACK_DIR/opencode-status/whitespace-fallback.json"
+
+EMPTY_TMPDIR_DIR="$WORK_DIR/empty-tmpdir"
+mkdir -p "$EMPTY_TMPDIR_DIR/opencode-status"
+
+cat > "$EMPTY_TMPDIR_DIR/opencode-status/empty-tmpdir-fallback.json" <<'JSON'
+{
+  "version": 1,
+  "sessionID": "empty-tmpdir-fallback",
+  "parentID": null,
+  "kind": "root",
+  "title": "Empty TMPDIR fallback",
+  "processPID": 99999999,
+  "status": "working",
+  "summary": "Should be pruned via /tmp fallback semantics",
+  "updatedAt": 4102444810002
+}
+JSON
+
+python3 - "$ROOT_DIR/scripts/prune_stale_snapshots.py" "$EMPTY_TMPDIR_DIR" <<'PY'
+import os
+import subprocess
+import sys
+
+completed = subprocess.run(
+    [sys.executable, sys.argv[1]],
+    cwd=sys.argv[2],
+    env={**os.environ, "TMUX_OPENCODE_STATUS_DIR": "", "TMPDIR": ""},
+    check=False,
+)
+sys.exit(completed.returncode)
+PY
+
+assert_file_exists "$EMPTY_TMPDIR_DIR/opencode-status/empty-tmpdir-fallback.json"
+
+WHITESPACE_TMPDIR_DIR="$WORK_DIR/whitespace-tmpdir"
+mkdir -p "$WHITESPACE_TMPDIR_DIR/opencode-status"
+
+cat > "$WHITESPACE_TMPDIR_DIR/opencode-status/whitespace-tmpdir-fallback.json" <<'JSON'
+{
+  "version": 1,
+  "sessionID": "whitespace-tmpdir-fallback",
+  "parentID": null,
+  "kind": "root",
+  "title": "Whitespace TMPDIR fallback",
+  "processPID": 99999999,
+  "status": "working",
+  "summary": "Should be pruned via /tmp fallback semantics",
+  "updatedAt": 4102444810003
+}
+JSON
+
+python3 - "$ROOT_DIR/scripts/prune_stale_snapshots.py" "$WHITESPACE_TMPDIR_DIR" <<'PY'
+import os
+import subprocess
+import sys
+
+completed = subprocess.run(
+    [sys.executable, sys.argv[1]],
+    cwd=sys.argv[2],
+    env={**os.environ, "TMUX_OPENCODE_STATUS_DIR": "", "TMPDIR": "   "},
+    check=False,
+)
+sys.exit(completed.returncode)
+PY
+
+assert_file_exists "$WHITESPACE_TMPDIR_DIR/opencode-status/whitespace-tmpdir-fallback.json"
+
+FOREIGN_DIR="$WORK_DIR/foreign-json"
+mkdir -p "$FOREIGN_DIR"
+
+cat > "$FOREIGN_DIR/unrelated.json" <<'JSON'
+{
+  "sessionID": "foreign-session",
+  "kind": "root",
+  "processPID": 99999999,
+  "title": "Foreign file"
+}
+JSON
+
+TMUX_OPENCODE_STATUS_DIR="$FOREIGN_DIR" python3 "$ROOT_DIR/scripts/prune_stale_snapshots.py"
+
+assert_file_exists "$FOREIGN_DIR/unrelated.json"
+
+MISSING_TMUX_DIR="$WORK_DIR/missing-tmux"
+mkdir -p "$MISSING_TMUX_DIR"
+
+cat > "$MISSING_TMUX_DIR/missing-tmux-root.json" <<'JSON'
+{
+  "version": 1,
+  "sessionID": "missing-tmux-root",
+  "parentID": null,
+  "kind": "root",
+  "title": "Missing tmux root",
+  "projectName": "tmux-opencode",
+  "status": "working",
+  "summary": "Should stay when tmux is unavailable",
+  "tmuxSessionID": "$missing",
+  "tmuxWindowID": "@missing",
+  "tmuxPaneID": "%missing",
+  "updatedAt": 4102444810004
+}
+JSON
+
+MISSING_TMUX_PATH_DIR="$WORK_DIR/missing-tmux-path"
+mkdir -p "$MISSING_TMUX_PATH_DIR"
+
+PATHLESS_DIR="$MISSING_TMUX_PATH_DIR" STATUS_DIR="$MISSING_TMUX_DIR" python3 - "$ROOT_DIR/scripts/prune_stale_snapshots.py" <<'PY'
+import os
+import subprocess
+import sys
+
+completed = subprocess.run(
+    [sys.executable, sys.argv[1]],
+    env={**os.environ, "PATH": os.environ["PATHLESS_DIR"], "TMUX_OPENCODE_STATUS_DIR": os.environ["STATUS_DIR"]},
+    check=False,
+)
+sys.exit(completed.returncode)
+PY
+
+assert_file_exists "$MISSING_TMUX_DIR/missing-tmux-root.json"
 
 printf 'prune_stale_snapshots_test.sh: PASS\n'

@@ -8,13 +8,61 @@ from pathlib import Path
 TMUX_TIMEOUT_SECONDS = 1
 
 
+class TmuxTimeoutError(RuntimeError):
+    pass
+
+
+TMUX_MISSING = object()
+
+
+def sanitized_env_path(name: str) -> str | None:
+    value = os.environ.get(name)
+    if value is None:
+        return None
+
+    value = value.strip()
+    return value or None
+
+
+def fallback_tmpdir() -> Path:
+    return Path(sanitized_env_path("TMPDIR") or "/tmp")
+
+
 def status_directory() -> Path:
-    configured = os.environ.get("TMUX_OPENCODE_STATUS_DIR")
-    if configured is not None:
-        configured = configured.strip()
+    configured = sanitized_env_path("TMUX_OPENCODE_STATUS_DIR")
     if configured:
         return Path(configured)
-    return Path(os.environ.get("TMPDIR", "/tmp")) / "opencode-status"
+    return fallback_tmpdir() / "opencode-status"
+
+
+def valid_snapshot_payload(path: Path, payload) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+
+    session_id = payload.get("sessionID")
+    if not isinstance(session_id, str) or not session_id:
+        return None
+    if path.name != f"{session_id}.json":
+        return None
+
+    if payload.get("version") != 1:
+        return None
+    if payload.get("kind") not in {"root", "subagent"}:
+        return None
+    if not isinstance(payload.get("title"), str):
+        return None
+    if not isinstance(payload.get("status"), str):
+        return None
+    if not isinstance(payload.get("summary"), str):
+        return None
+    if isinstance(payload.get("updatedAt"), bool) or not isinstance(payload.get("updatedAt"), int):
+        return None
+
+    parent_id = payload.get("parentID")
+    if parent_id is not None and not isinstance(parent_id, str):
+        return None
+
+    return session_id
 
 
 def read_snapshots(status_dir: Path):
@@ -30,11 +78,8 @@ def read_snapshots(status_dir: Path):
         except (OSError, json.JSONDecodeError):
             continue
 
-        if not isinstance(payload, dict):
-            continue
-
-        session_id = payload.get("sessionID")
-        if not isinstance(session_id, str):
+        session_id = valid_snapshot_payload(path, payload)
+        if session_id is None:
             continue
 
         snapshots[session_id] = payload
@@ -100,8 +145,10 @@ def tmux_output(args):
             timeout=TMUX_TIMEOUT_SECONDS,
             check=False,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return None
+    except FileNotFoundError:
+        return TMUX_MISSING
+    except subprocess.TimeoutExpired as exc:
+        raise TmuxTimeoutError from exc
 
     if completed.returncode != 0:
         return None
@@ -116,14 +163,21 @@ def tmux_metadata_is_alive(payload) -> bool:
     if not all(isinstance(value, str) and value for value in [tmux_session_id, tmux_window_id, tmux_pane_id]):
         return True
 
-    if tmux_output(["has-session", "-t", tmux_session_id]) is None:
+    session_result = tmux_output(["has-session", "-t", tmux_session_id])
+    if session_result is TMUX_MISSING:
+        return True
+    if session_result is None:
         return False
 
     windows = tmux_output(["list-windows", "-t", tmux_session_id, "-F", "#{window_id}"])
+    if windows is TMUX_MISSING:
+        return True
     if windows is None or tmux_window_id not in windows:
         return False
 
     panes = tmux_output(["list-panes", "-t", tmux_window_id, "-F", "#{pane_id}"])
+    if panes is TMUX_MISSING:
+        return True
     if panes is None or tmux_pane_id not in panes:
         return False
 
@@ -142,4 +196,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except TmuxTimeoutError:
+        raise SystemExit("timed out waiting for tmux")
