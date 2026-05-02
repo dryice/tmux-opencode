@@ -11,7 +11,7 @@ The project has two parts:
 
 - `tmux`
 - `fzf`
-- `python3`
+- `python3.10+`
 - `npm`
 - OpenCode with plugin support
 
@@ -137,6 +137,8 @@ prefix + I
 ```
 
 The tmux entrypoint is `tmux-opencode.tmux`. It binds the configured key to `scripts/show_popup.sh`, which opens a tmux popup and runs `scripts/popup_command.sh`.
+
+The popup-side Python scripts in `scripts/` require Python 3.10 or newer.
 
 The popup first prunes stale root snapshot trees, then uses stored tmux metadata to jump to the selected tmux session, window, and pane. `fzf` displays and matches against the session status, project name, and title. The human-readable rows look like this:
 
