@@ -160,7 +160,7 @@ def tmux_metadata_is_alive(payload) -> bool:
     tmux_window_id = payload.get("tmuxWindowID")
     tmux_pane_id = payload.get("tmuxPaneID")
 
-    if not all(isinstance(value, str) and value for value in [tmux_session_id, tmux_window_id, tmux_pane_id]):
+    if not all(isinstance(value, str) and value.strip() for value in [tmux_session_id, tmux_window_id, tmux_pane_id]):
         return True
 
     session_result = tmux_output(["has-session", "-t", tmux_session_id])
