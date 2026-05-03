@@ -138,7 +138,7 @@ assert_file_not_exists "$WORK_DIR/dead-tmux-root.json"
 assert_file_not_exists "$WORK_DIR/dead-tmux-child.json"
 assert_file_exists "$WORK_DIR/legacy-root.json"
 
-cat > "$WORK_DIR/slow-tmux.json" <<'JSON'
+cat > "$WORK_DIR/slow-tmux-root.json" <<'JSON'
 {
   "version": 1,
   "sessionID": "slow-tmux-root",
@@ -181,7 +181,7 @@ if completed.returncode == 0:
 sys.exit(0)
 PY
 
-assert_file_exists "$WORK_DIR/slow-tmux.json"
+assert_file_exists "$WORK_DIR/slow-tmux-root.json"
 
 EMPTY_ENV_DIR="$WORK_DIR/empty-env"
 mkdir -p "$EMPTY_ENV_DIR"
@@ -261,7 +261,7 @@ cat > "$EMPTY_TMPDIR_DIR/opencode-status/empty-tmpdir-fallback.json" <<'JSON'
   "title": "Empty TMPDIR fallback",
   "processPID": 99999999,
   "status": "working",
-  "summary": "Should be pruned via /tmp fallback semantics",
+  "summary": "Should stay when TMPDIR falls back to /tmp",
   "updatedAt": 4102444810002
 }
 JSON
@@ -294,7 +294,7 @@ cat > "$WHITESPACE_TMPDIR_DIR/opencode-status/whitespace-tmpdir-fallback.json" <
   "title": "Whitespace TMPDIR fallback",
   "processPID": 99999999,
   "status": "working",
-  "summary": "Should be pruned via /tmp fallback semantics",
+  "summary": "Should stay when TMPDIR falls back to /tmp",
   "updatedAt": 4102444810003
 }
 JSON
@@ -368,5 +368,43 @@ sys.exit(completed.returncode)
 PY
 
 assert_file_exists "$MISSING_TMUX_DIR/missing-tmux-root.json"
+
+INVALID_PID_DIR="$WORK_DIR/invalid-pid"
+mkdir -p "$INVALID_PID_DIR"
+
+cat > "$INVALID_PID_DIR/zero-pid-root.json" <<'JSON'
+{
+  "version": 1,
+  "sessionID": "zero-pid-root",
+  "parentID": null,
+  "kind": "root",
+  "title": "Zero PID root",
+  "projectName": "tmux-opencode",
+  "processPID": 0,
+  "status": "working",
+  "summary": "Should stay when PID is invalid",
+  "updatedAt": 4102444810005
+}
+JSON
+
+cat > "$INVALID_PID_DIR/negative-pid-root.json" <<'JSON'
+{
+  "version": 1,
+  "sessionID": "negative-pid-root",
+  "parentID": null,
+  "kind": "root",
+  "title": "Negative PID root",
+  "projectName": "tmux-opencode",
+  "processPID": -1,
+  "status": "working",
+  "summary": "Should stay when PID is invalid",
+  "updatedAt": 4102444810006
+}
+JSON
+
+TMUX_OPENCODE_STATUS_DIR="$INVALID_PID_DIR" python3 "$ROOT_DIR/scripts/prune_stale_snapshots.py"
+
+assert_file_exists "$INVALID_PID_DIR/zero-pid-root.json"
+assert_file_exists "$INVALID_PID_DIR/negative-pid-root.json"
 
 printf 'prune_stale_snapshots_test.sh: PASS\n'

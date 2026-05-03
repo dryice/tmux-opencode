@@ -171,8 +171,8 @@ Subagents are prefixed with `- ` when shown.
 - Child snapshots keep their `parentID` relationship and remain on disk until the owning root session exits or is replaced with `/new`.
 - Snapshots from other running OpenCode instances are left alone until those instances explicitly update or remove them.
 - The popup requires `fzf`. If `fzf` is unavailable, the popup exits with a short error.
-- Before showing `fzf`, the popup removes stale root snapshot trees when the stored root `processPID` is no longer running or the stored tmux session/window/pane IDs no longer exist.
-- Legacy snapshots without `processPID` or complete tmux metadata are kept visible; pruning only applies when the snapshot has enough metadata to prove the owner is gone.
+- Before showing `fzf`, the popup removes stale root snapshot trees when it can prove the owner is gone: either the stored `processPID` is no longer running, or the stored tmux session/window/pane IDs no longer exist.
+- Snapshots that lack enough metadata to prove staleness (no `processPID` and no complete tmux metadata, or invalid/corrupt values) are kept visible.
 - Pressing Enter on a selectable row jumps to the stored tmux session, window, and pane.
 - Canceling `fzf` exits cleanly without changing tmux state.
 - Selecting a row that lacks tmux metadata fails safely with a short error.

@@ -122,7 +122,7 @@ def pid_is_alive(payload) -> bool:
     if isinstance(pid, bool) or not isinstance(pid, int):
         return True
     if pid <= 0:
-        return False
+        return True
 
     try:
         os.kill(pid, 0)
