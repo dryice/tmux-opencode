@@ -88,6 +88,7 @@ async function writeSnapshotForSession(
     kind: session.parentID ? "subagent" : "root",
     title: session.title,
     projectName,
+    ...(session.parentID ? {} : { processPID: process.pid }),
     ...tmuxFields(resolvedTmuxContext),
     status,
     summary,

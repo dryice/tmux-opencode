@@ -13,6 +13,7 @@ export interface SessionSnapshot {
   kind: SessionKind
   title: string
   projectName?: string
+  processPID?: number
   tmuxSessionID?: string
   tmuxWindowID?: string
   tmuxPaneID?: string
