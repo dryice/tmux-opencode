@@ -276,13 +276,14 @@ const plugin: Plugin = async ({ client, project }) => {
 
   return {
     async event(input) {
-      const event = input.event as PluginEvent
-      const sessionID = eventSessionID(event)
+      try {
+        const event = input.event as PluginEvent
+        const sessionID = eventSessionID(event)
 
-      if (event.type === "tui.session.select" && sessionID) {
-        await showVisibleSession(sessionID)
-        return
-      }
+        if (event.type === "tui.session.select" && sessionID) {
+          await showVisibleSession(sessionID)
+          return
+        }
 
       if (event.type === "command.executed" && sessionID && isExitCommand(eventCommand(event))) {
         if (parentBySessionID.has(sessionID)) {
@@ -362,6 +363,9 @@ const plugin: Plugin = async ({ client, project }) => {
         await rememberVisibleRootSnapshot(sessionID, "waiting", `Permission required: ${event.properties?.type ?? "unknown"}`)
         return
       }
+      } catch {
+        // Best-effort: plugin errors must never crash the opencode host process
+      }
     },
 
     async "command.execute.before"(input) {
@@ -369,11 +373,19 @@ const plugin: Plugin = async ({ client, project }) => {
         return
       }
 
-      await removeVisibleSession(input.sessionID, { cascade: true })
+      try {
+        await removeVisibleSession(input.sessionID, { cascade: true })
+      } catch {
+        // Best-effort: plugin errors must never crash the opencode host process
+      }
     },
 
     async "permission.ask"(input) {
-      await rememberVisibleRootSnapshot(input.sessionID, "waiting", `Permission required: ${input.type}`)
+      try {
+        await rememberVisibleRootSnapshot(input.sessionID, "waiting", `Permission required: ${input.type}`)
+      } catch {
+        // Best-effort: plugin errors must never crash the opencode host process
+      }
     },
   }
 }

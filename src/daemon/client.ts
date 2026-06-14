@@ -1,9 +1,14 @@
 import net from "node:net"
+import { existsSync } from "node:fs"
 import type { DaemonRequest, DaemonResponse } from "./types"
 
 export function createDaemonClient({ socketPath }: { socketPath: string }) {
   return {
     request(request: DaemonRequest): Promise<DaemonResponse> {
+      if (!existsSync(socketPath)) {
+        return Promise.resolve({ type: "error", code: "UNAVAILABLE", message: "daemon socket not found" })
+      }
+
       return new Promise((resolve, reject) => {
         const socket = net.createConnection(socketPath)
         let buffer = ""
@@ -19,7 +24,10 @@ export function createDaemonClient({ socketPath }: { socketPath: string }) {
             reject(error)
           }
         })
-        socket.on("error", reject)
+        socket.on("error", (error) => {
+          socket.destroy()
+          reject(error)
+        })
       })
     },
   }
