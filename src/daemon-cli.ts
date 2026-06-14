@@ -14,7 +14,10 @@ function isSocketAlive(socketPath: string): Promise<boolean> {
       socket.destroy()
       resolve(true)
     })
-    socket.on("error", () => resolve(false))
+    socket.on("error", () => {
+      socket.destroy()
+      resolve(false)
+    })
   })
 }
 
@@ -26,7 +29,7 @@ async function ensureRunning() {
   }
 
   await unlink(sockPath).catch(() => {})
-  await mkdir(daemonBaseDirectory(), { recursive: true })
+  await mkdir(daemonBaseDirectory(), { recursive: true, mode: 0o700 })
   spawn(process.execPath, [fileURLToPath(new URL("./daemon-entry.js", import.meta.url))], {
     detached: true,
     stdio: "ignore",
@@ -67,8 +70,13 @@ if (request === undefined) {
   process.stderr.write(`Usage: ${path.basename(process.argv[1] ?? "daemon-cli")} ensure-running|prune-and-list|mutate [mutation-json]\n`)
   process.exitCode = 2
 } else {
-  await ensureRunning()
-  const client = createDaemonClient({ socketPath: daemonSocketPath() })
-  const response = await client.request(request)
-  process.stdout.write(`${JSON.stringify(response)}\n`)
+  try {
+    await ensureRunning()
+    const client = createDaemonClient({ socketPath: daemonSocketPath() })
+    const response = await client.request(request)
+    process.stdout.write(`${JSON.stringify(response)}\n`)
+  } catch (error) {
+    process.stderr.write(`daemon-cli error: ${error instanceof Error ? error.message : String(error)}\n`)
+    process.exitCode = 1
+  }
 }

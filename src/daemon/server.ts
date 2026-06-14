@@ -13,7 +13,7 @@ async function writeResponse(socket: net.Socket, response: DaemonResponse) {
 }
 
 export async function startDaemonServer({ socketPath, dbPath }: { socketPath: string; dbPath: string }) {
-  await mkdir(path.dirname(socketPath), { recursive: true })
+  await mkdir(path.dirname(socketPath), { recursive: true, mode: 0o700 })
   await rm(socketPath, { force: true })
   const store = await createStore({ dbPath })
 

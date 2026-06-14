@@ -14,25 +14,25 @@ daemon_cli() {
 }
 
 fetch_rows() {
-  daemon_cli prune-and-list
+  daemon_cli prune-and-list 2>/dev/null
 }
 
 set +e
-daemon_output="$(fetch_rows 2>&1)"
+daemon_output="$(fetch_rows)"
 daemon_status=$?
 set -e
 
 if [[ $daemon_status -ne 0 ]]; then
   daemon_cli ensure-running >/dev/null 2>&1 || true
   set +e
-  daemon_output="$(fetch_rows 2>&1)"
+  daemon_output="$(fetch_rows)"
   daemon_status=$?
   set -e
 fi
 
 if [[ $daemon_status -ne 0 ]]; then
   printf 'daemon unavailable after one restart attempt\n' >&2
-  printf '%s\n' "$daemon_output" >&2
+  daemon_cli prune-and-list >&2 2>&1 || true
   exit "$daemon_status"
 fi
 
