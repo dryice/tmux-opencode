@@ -1,8 +1,8 @@
 import { DatabaseSync } from "node:sqlite"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
-import { shouldPruneRoot, type PruneInput, type PruneSessionRoot } from "./prune"
-import type { SessionMutation, VisibleRow } from "./types"
+import { shouldPruneRoot, type PruneInput, type PruneSessionRoot } from "./prune.js"
+import type { SessionMutation, VisibleRow } from "./types.js"
 
 type SessionRecord = {
   sessionID: string

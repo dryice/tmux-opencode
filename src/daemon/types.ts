@@ -1,4 +1,4 @@
-import type { SessionKind, SessionStatus } from "../types"
+import type { SessionKind, SessionStatus } from "../types.js"
 
 export const DAEMON_PROTOCOL_VERSION = 1 as const
 

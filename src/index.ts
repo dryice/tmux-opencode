@@ -1,10 +1,10 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import path from "node:path"
-import type { SessionStatus } from "./types"
-import { createDaemonClient } from "./daemon/client"
-import { daemonSocketPath } from "./daemon/paths"
-import { DAEMON_PROTOCOL_VERSION, type SessionMutation } from "./daemon/types"
-import { buildTmuxWindowName, renameTmuxWindow, resolveTmuxContext, type TmuxContext } from "./tmux"
+import type { SessionStatus } from "./types.js"
+import { createDaemonClient } from "./daemon/client.js"
+import { daemonSocketPath } from "./daemon/paths.js"
+import { DAEMON_PROTOCOL_VERSION, type SessionMutation } from "./daemon/types.js"
+import { buildTmuxWindowName, renameTmuxWindow, resolveTmuxContext, type TmuxContext } from "./tmux.js"
 
 type PluginEvent = {
   type: string

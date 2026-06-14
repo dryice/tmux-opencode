@@ -1,6 +1,6 @@
 import net from "node:net"
 import { existsSync } from "node:fs"
-import type { DaemonRequest, DaemonResponse } from "./types"
+import type { DaemonRequest, DaemonResponse } from "./types.js"
 
 export function createDaemonClient({ socketPath }: { socketPath: string }) {
   return {

@@ -1,8 +1,8 @@
 import net from "node:net"
 import { mkdir, rm } from "node:fs/promises"
 import path from "node:path"
-import { createStore } from "./store"
-import { DAEMON_PROTOCOL_VERSION, type DaemonRequest, type DaemonResponse } from "./types"
+import { createStore } from "./store.js"
+import { DAEMON_PROTOCOL_VERSION, type DaemonRequest, type DaemonResponse } from "./types.js"
 
 function invalidRequest(message: string): DaemonResponse {
   return { type: "error", code: "INVALID_REQUEST", message }

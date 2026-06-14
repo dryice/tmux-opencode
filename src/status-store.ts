@@ -1,6 +1,6 @@
 import { access, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
-import type { SessionSnapshot } from "./types"
+import type { SessionSnapshot } from "./types.js"
 
 function snapshotPath(directory: string, sessionID: string): string {
   return path.join(directory, `${sessionID}.json`)

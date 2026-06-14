@@ -1,5 +1,5 @@
-import { daemonDatabasePath, daemonSocketPath } from "./daemon/paths"
-import { startDaemonServer } from "./daemon/server"
+import { daemonDatabasePath, daemonSocketPath } from "./daemon/paths.js"
+import { startDaemonServer } from "./daemon/server.js"
 
 await startDaemonServer({
   socketPath: daemonSocketPath(),

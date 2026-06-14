@@ -3,9 +3,9 @@ import { mkdir, unlink } from "node:fs/promises"
 import net from "node:net"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { createDaemonClient } from "./daemon/client"
-import { daemonBaseDirectory, daemonSocketPath } from "./daemon/paths"
-import { DAEMON_PROTOCOL_VERSION, type DaemonRequest, type SessionMutation } from "./daemon/types"
+import { createDaemonClient } from "./daemon/client.js"
+import { daemonBaseDirectory, daemonSocketPath } from "./daemon/paths.js"
+import { DAEMON_PROTOCOL_VERSION, type DaemonRequest, type SessionMutation } from "./daemon/types.js"
 
 function isSocketAlive(socketPath: string): Promise<boolean> {
   return new Promise((resolve) => {
