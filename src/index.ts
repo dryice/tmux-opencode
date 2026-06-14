@@ -65,10 +65,14 @@ function tmuxFields(tmuxContext: TmuxContext | null | undefined) {
 }
 
 export async function sendSessionMutation(mutation: SessionMutation) {
-  const client = createDaemonClient({ socketPath: daemonSocketPath() })
-  const response = await client.request({ type: "mutate", protocolVersion: DAEMON_PROTOCOL_VERSION, mutation })
-  if (response.type === "error") {
-    throw new Error(response.message)
+  try {
+    const client = createDaemonClient({ socketPath: daemonSocketPath() })
+    const response = await client.request({ type: "mutate", protocolVersion: DAEMON_PROTOCOL_VERSION, mutation })
+    if (response.type === "error") {
+      console.warn(`tmux-opencode: daemon mutation error: ${response.message}`)
+    }
+  } catch (error) {
+    console.warn(`tmux-opencode: daemon unreachable, skipping mutation: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
 

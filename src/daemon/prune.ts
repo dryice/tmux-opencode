@@ -7,8 +7,8 @@ export type PruneSessionRoot = {
 }
 
 export type PruneInput = {
-  runningPIDs: Set<number>
-  liveTmuxTargets: Set<string>
+  isPIDAlive?: (pid: number) => boolean
+  isTmuxTargetLive?: (target: string) => boolean
 }
 
 export function tmuxTargetKey(root: Pick<PruneSessionRoot, "tmuxSessionID" | "tmuxWindowID" | "tmuxPaneID">): string | undefined {
@@ -20,12 +20,12 @@ export function tmuxTargetKey(root: Pick<PruneSessionRoot, "tmuxSessionID" | "tm
 }
 
 export function shouldPruneRoot(root: PruneSessionRoot, input: PruneInput): boolean {
-  if (root.processPID !== null && !input.runningPIDs.has(root.processPID)) {
+  if (root.processPID !== null && input.isPIDAlive && !input.isPIDAlive(root.processPID)) {
     return true
   }
 
   const tmuxKey = tmuxTargetKey(root)
-  if (tmuxKey !== undefined && !input.liveTmuxTargets.has(tmuxKey)) {
+  if (tmuxKey !== undefined && input.isTmuxTargetLive && !input.isTmuxTargetLive(tmuxKey)) {
     return true
   }
 

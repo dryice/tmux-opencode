@@ -26,6 +26,7 @@ export type SessionMutation = {
 
 export type VisibleRow = {
   sessionID: string
+  parentID: string | null
   kind: SessionKind
   status: SessionStatus
   projectName?: string

@@ -84,7 +84,6 @@ describe("daemon server", () => {
         parentID: null,
         kind: "root",
         title: "External OpenCode session",
-        processPID: 999999,
         status: "idle",
         summary: "Session is idle",
         updatedAt: 4102444800000,
@@ -96,6 +95,37 @@ describe("daemon server", () => {
       type: "rows",
       rows: [expect.objectContaining({ sessionID: "ses-external-root", title: "External OpenCode session" })],
     })
+
+    await server.close()
+  })
+
+  it("prunes roots with dead PIDs during prune-and-list", async () => {
+    const { startDaemonServer } = await import("../daemon/server")
+    const { createDaemonClient } = await import("../daemon/client")
+
+    const socketPath = path.join(tempDir, "daemon.sock")
+    const dbPath = path.join(tempDir, "status.sqlite")
+    const server = await startDaemonServer({ socketPath, dbPath })
+    const client = createDaemonClient({ socketPath })
+
+    await client.request({
+      type: "mutate",
+      protocolVersion: 1,
+      mutation: {
+        type: "upsert-session",
+        sessionID: "ses-dead-pid",
+        parentID: null,
+        kind: "root",
+        title: "Dead process session",
+        processPID: 999999,
+        status: "idle",
+        summary: "Session is idle",
+        updatedAt: 4102444800000,
+      },
+    })
+
+    const response = await client.request({ type: "prune-and-list", protocolVersion: 1 })
+    expect(response).toEqual({ type: "rows", rows: [] })
 
     await server.close()
   })

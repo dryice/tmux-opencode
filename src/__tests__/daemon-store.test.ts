@@ -49,6 +49,37 @@ describe("daemon store", () => {
     ])
   })
 
+  it("returns child rows alongside root rows in visible rows", async () => {
+    const { createStore } = await import("../daemon/store")
+    const store = await createStore({ dbPath })
+
+    await store.applyMutation({
+      type: "upsert-session",
+      sessionID: "ses-root",
+      parentID: null,
+      kind: "root",
+      title: "Root",
+      status: "working",
+      summary: "Working",
+      updatedAt: 2,
+    })
+    await store.applyMutation({
+      type: "upsert-session",
+      sessionID: "ses-child",
+      parentID: "ses-root",
+      kind: "subagent",
+      title: "Child",
+      status: "waiting",
+      summary: "Waiting",
+      updatedAt: 1,
+    })
+
+    const rows = await store.listVisibleRows()
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toEqual(expect.objectContaining({ sessionID: "ses-root", kind: "root", parentID: null }))
+    expect(rows[1]).toEqual(expect.objectContaining({ sessionID: "ses-child", kind: "subagent", parentID: "ses-root" }))
+  })
+
   it("deletes a stale root and its descendants during prune", async () => {
     const { createStore } = await import("../daemon/store")
     const store = await createStore({ dbPath })
@@ -75,7 +106,7 @@ describe("daemon store", () => {
       updatedAt: 2,
     })
 
-    await store.prune({ runningPIDs: new Set<number>(), liveTmuxTargets: new Set<string>() })
+    await store.prune({ isPIDAlive: () => false })
     await expect(store.listVisibleRows()).resolves.toEqual([])
   })
 })

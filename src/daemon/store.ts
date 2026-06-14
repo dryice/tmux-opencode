@@ -6,6 +6,7 @@ import type { SessionMutation, VisibleRow } from "./types"
 
 type SessionRecord = {
   sessionID: string
+  parentID: string | null
   kind: VisibleRow["kind"]
   status: VisibleRow["status"]
   projectName: string | null
@@ -24,6 +25,7 @@ type UpsertSessionMutation = Extract<SessionMutation, { type: "upsert-session" }
 function rowToVisibleRow(row: SessionRecord): VisibleRow {
   return {
     sessionID: row.sessionID,
+    parentID: row.parentID,
     kind: row.kind,
     status: row.status,
     ...(row.projectName === null ? {} : { projectName: row.projectName }),
@@ -101,6 +103,7 @@ export async function createStore({ dbPath }: { dbPath: string }) {
   const listVisible = db.prepare(`
     SELECT
       session_id as sessionID,
+      parent_id as parentID,
       kind,
       status,
       project_name as projectName,
@@ -109,8 +112,9 @@ export async function createStore({ dbPath }: { dbPath: string }) {
       tmux_window_id as tmuxWindowID,
       tmux_pane_id as tmuxPaneID
     FROM sessions
-    WHERE kind = 'root'
-    ORDER BY updated_at DESC
+    ORDER BY
+      CASE kind WHEN 'root' THEN 0 ELSE 1 END,
+      updated_at DESC
   `)
   const listRoots = db.prepare(`
     SELECT

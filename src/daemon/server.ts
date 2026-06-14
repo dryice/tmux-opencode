@@ -42,6 +42,16 @@ export async function startDaemonServer({ socketPath, dbPath }: { socketPath: st
           store.applyMutation(request.mutation)
           response = { type: "ok" }
         } else if (request.type === "prune-and-list") {
+          await store.prune({
+            isPIDAlive: (pid: number) => {
+              try {
+                process.kill(pid, 0)
+                return true
+              } catch {
+                return false
+              }
+            },
+          })
           response = { type: "rows", rows: await store.listVisibleRows() }
         } else if (request.type === "ensure-running") {
           response = { type: "ok" }

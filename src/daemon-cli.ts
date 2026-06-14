@@ -1,20 +1,42 @@
 import { spawn } from "node:child_process"
-import { access, mkdir } from "node:fs/promises"
+import { mkdir, unlink } from "node:fs/promises"
+import net from "node:net"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 import { createDaemonClient } from "./daemon/client"
 import { daemonBaseDirectory, daemonSocketPath } from "./daemon/paths"
 import { DAEMON_PROTOCOL_VERSION, type DaemonRequest, type SessionMutation } from "./daemon/types"
 
+function isSocketAlive(socketPath: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.createConnection(socketPath)
+    socket.on("connect", () => {
+      socket.destroy()
+      resolve(true)
+    })
+    socket.on("error", () => resolve(false))
+  })
+}
+
 async function ensureRunning() {
-  try {
-    await access(daemonSocketPath())
+  const sockPath = daemonSocketPath()
+
+  if (await isSocketAlive(sockPath)) {
     return
-  } catch {
-    await mkdir(daemonBaseDirectory(), { recursive: true })
-    spawn(process.execPath, [new URL("./daemon-entry.js", import.meta.url).pathname], {
-      detached: true,
-      stdio: "ignore",
-    }).unref()
+  }
+
+  await unlink(sockPath).catch(() => {})
+  await mkdir(daemonBaseDirectory(), { recursive: true })
+  spawn(process.execPath, [fileURLToPath(new URL("./daemon-entry.js", import.meta.url))], {
+    detached: true,
+    stdio: "ignore",
+  }).unref()
+
+  for (let attempt = 0; attempt < 50; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    if (await isSocketAlive(sockPath)) {
+      return
+    }
   }
 }
 
