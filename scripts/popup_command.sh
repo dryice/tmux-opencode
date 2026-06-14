@@ -9,20 +9,35 @@ if ! command -v fzf >/dev/null 2>&1; then
   exit 1
 fi
 
+daemon_cli() {
+  node "$CURRENT_DIR/../dist/daemon-cli.js" "$@"
+}
+
+fetch_rows() {
+  daemon_cli prune-and-list
+}
+
 set +e
-prune_output="$(python3 "$CURRENT_DIR/prune_stale_snapshots.py" 2>&1)"
-prune_status=$?
+daemon_output="$(fetch_rows 2>&1)"
+daemon_status=$?
 set -e
 
-if [[ $prune_status -ne 0 ]]; then
-  printf 'prune_stale_snapshots.py failed with exit code %s\n' "$prune_status" >&2
-  if [[ -n "$prune_output" ]]; then
-    printf '%s\n' "$prune_output" >&2
-  fi
+if [[ $daemon_status -ne 0 ]]; then
+  daemon_cli ensure-running >/dev/null 2>&1 || true
+  set +e
+  daemon_output="$(fetch_rows 2>&1)"
+  daemon_status=$?
+  set -e
+fi
+
+if [[ $daemon_status -ne 0 ]]; then
+  printf 'daemon unavailable after one restart attempt\n' >&2
+  printf '%s\n' "$daemon_output" >&2
+  exit "$daemon_status"
 fi
 
 set +e
-machine_output="$(TMUX_OPENCODE_RENDER_MODE=machine bash "$CURRENT_DIR/render_status.sh")"
+machine_output="$(DAEMON_JSON="$daemon_output" TMUX_OPENCODE_RENDER_MODE=machine bash "$CURRENT_DIR/render_status.sh")"
 render_status_status=$?
 set -e
 
