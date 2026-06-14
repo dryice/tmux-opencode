@@ -69,10 +69,10 @@ export async function sendSessionMutation(mutation: SessionMutation) {
     const client = createDaemonClient({ socketPath: daemonSocketPath() })
     const response = await client.request({ type: "mutate", protocolVersion: DAEMON_PROTOCOL_VERSION, mutation })
     if (response.type === "error") {
-      console.warn(`tmux-opencode: daemon mutation error: ${response.message}`)
+      return
     }
-  } catch (error) {
-    console.warn(`tmux-opencode: daemon unreachable, skipping mutation: ${error instanceof Error ? error.message : String(error)}`)
+  } catch {
+    // Daemon unreachable — best-effort, do not log to avoid polluting the opencode process output
   }
 }
 
