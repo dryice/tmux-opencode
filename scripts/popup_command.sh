@@ -13,26 +13,25 @@ daemon_cli() {
   node "$CURRENT_DIR/../dist/daemon-cli.js" "$@"
 }
 
-fetch_rows() {
-  daemon_cli prune-and-list 2>/dev/null
-}
+daemon_err_file="$(mktemp)"
+trap 'rm -f "$daemon_err_file"' EXIT
 
 set +e
-daemon_output="$(fetch_rows)"
+daemon_output="$(daemon_cli prune-and-list 2>"$daemon_err_file")"
 daemon_status=$?
 set -e
 
 if [[ $daemon_status -ne 0 ]]; then
   daemon_cli ensure-running >/dev/null 2>&1 || true
   set +e
-  daemon_output="$(fetch_rows)"
+  daemon_output="$(daemon_cli prune-and-list 2>"$daemon_err_file")"
   daemon_status=$?
   set -e
 fi
 
 if [[ $daemon_status -ne 0 ]]; then
   printf 'daemon unavailable after one restart attempt\n' >&2
-  daemon_cli prune-and-list >&2 2>&1 || true
+  [[ -s "$daemon_err_file" ]] && cat "$daemon_err_file" >&2
   exit "$daemon_status"
 fi
 

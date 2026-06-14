@@ -67,6 +67,10 @@ export async function startDaemonServer({ socketPath, dbPath }: { socketPath: st
 
     socket.on("data", (chunk) => {
       buffer += chunk.toString("utf8")
+      if (buffer.length > 1024 * 1024) {
+        socket.destroy()
+        return
+      }
       void handleRequest()
     })
   })

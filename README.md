@@ -13,6 +13,7 @@ The project has two parts:
 - `tmux`
 - `fzf`
 - `python3.10+`
+- Node.js 22+ (the daemon uses the built-in `node:sqlite` module)
 - `npm`
 - OpenCode with plugin support
 

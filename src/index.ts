@@ -64,15 +64,14 @@ function tmuxFields(tmuxContext: TmuxContext | null | undefined) {
   }
 }
 
-async function sendSessionMutation(mutation: SessionMutation) {
+async function sendSessionMutation(mutation: SessionMutation): Promise<boolean> {
   try {
     const client = createDaemonClient({ socketPath: daemonSocketPath() })
     const response = await client.request({ type: "mutate", protocolVersion: DAEMON_PROTOCOL_VERSION, mutation })
-    if (response.type === "error") {
-      return
-    }
+    return response.type === "ok"
   } catch {
     // Daemon unreachable — best-effort, do not log to avoid polluting the opencode process output
+    return false
   }
 }
 
@@ -90,7 +89,7 @@ async function sendSnapshotForSession(
   }
 
   const resolvedTmuxContext = tmuxContext === undefined ? await resolveTmuxContext() : tmuxContext
-  await sendSessionMutation({
+  return sendSessionMutation({
     type: "upsert-session",
     sessionID,
     parentID: session.parentID ?? null,
@@ -103,7 +102,6 @@ async function sendSnapshotForSession(
     summary,
     updatedAt: Date.now(),
   })
-  return true
 }
 
 async function writeCurrentSnapshot(
@@ -286,7 +284,7 @@ const plugin: Plugin = async ({ client, project }) => {
         }
 
       if (event.type === "command.executed" && sessionID && isExitCommand(eventCommand(event))) {
-        if (parentBySessionID.has(sessionID)) {
+        if (!isVisibleSession(sessionID) || parentBySessionID.has(sessionID)) {
           return
         }
 
@@ -326,7 +324,7 @@ const plugin: Plugin = async ({ client, project }) => {
       }
 
       if (event.type === "session.deleted") {
-        if (parentBySessionID.has(sessionID)) {
+        if (!isVisibleSession(sessionID) || parentBySessionID.has(sessionID)) {
           return
         }
 

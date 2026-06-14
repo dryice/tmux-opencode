@@ -30,10 +30,12 @@ async function ensureRunning() {
 
   await unlink(sockPath).catch(() => {})
   await mkdir(daemonBaseDirectory(), { recursive: true, mode: 0o700 })
-  spawn(process.execPath, [fileURLToPath(new URL("./daemon-entry.js", import.meta.url))], {
+  const child = spawn(process.execPath, [fileURLToPath(new URL("./daemon-entry.js", import.meta.url))], {
     detached: true,
     stdio: "ignore",
-  }).unref()
+  })
+  child.on("error", () => {})
+  child.unref()
 
   for (let attempt = 0; attempt < 50; attempt++) {
     await new Promise((resolve) => setTimeout(resolve, 50))
@@ -41,6 +43,8 @@ async function ensureRunning() {
       return
     }
   }
+
+  throw new Error("daemon did not become reachable after retry loop")
 }
 
 function requestForCommand(command: string | undefined, payload: string | undefined): DaemonRequest | undefined {
@@ -75,6 +79,9 @@ if (request === undefined) {
     const client = createDaemonClient({ socketPath: daemonSocketPath() })
     const response = await client.request(request)
     process.stdout.write(`${JSON.stringify(response)}\n`)
+    if (response.type === "error") {
+      process.exitCode = 1
+    }
   } catch (error) {
     process.stderr.write(`daemon-cli error: ${error instanceof Error ? error.message : String(error)}\n`)
     process.exitCode = 1
