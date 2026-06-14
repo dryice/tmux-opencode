@@ -1,20 +1,26 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest"
-import { mkdtempSync, readFileSync, existsSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import plugin from "../index"
 import { STATUS_DIR_ENV_KEY } from "../types"
+import type { DaemonRequest, SessionMutation } from "../daemon/types"
 
-const { resolveTmuxContextMock, renameTmuxWindowMock, buildTmuxWindowNameMock } = vi.hoisted(() => ({
+const { resolveTmuxContextMock, renameTmuxWindowMock, buildTmuxWindowNameMock, daemonRequestMock } = vi.hoisted(() => ({
   resolveTmuxContextMock: vi.fn(),
   renameTmuxWindowMock: vi.fn(),
   buildTmuxWindowNameMock: vi.fn(),
+  daemonRequestMock: vi.fn(),
 }))
 
 vi.mock("../tmux", () => ({
   resolveTmuxContext: resolveTmuxContextMock,
   renameTmuxWindow: renameTmuxWindowMock,
   buildTmuxWindowName: buildTmuxWindowNameMock,
+}))
+
+vi.mock("../daemon/client", () => ({
+  createDaemonClient: () => ({ request: daemonRequestMock }),
 }))
 
 type SessionRecord = {
@@ -234,6 +240,44 @@ function readSnapshot(dir: string, sessionID: string) {
   return JSON.parse(readFileSync(path.join(dir, `${sessionID}.json`), "utf8"))
 }
 
+function deleteSnapshotFile(dir: string, sessionID: string) {
+  const filePath = path.join(dir, `${sessionID}.json`)
+  if (existsSync(filePath)) {
+    unlinkSync(filePath)
+  }
+}
+
+function deleteSnapshotTreeFiles(dir: string, sessionID: string) {
+  const pending = [sessionID]
+  for (const nextSessionID of pending) {
+    for (const entry of readdirSync(dir)) {
+      if (!entry.endsWith(".json")) {
+        continue
+      }
+
+      const snapshot = JSON.parse(readFileSync(path.join(dir, entry), "utf8")) as { sessionID: string; parentID: string | null }
+      if (snapshot.parentID === nextSessionID) {
+        pending.push(snapshot.sessionID)
+      }
+    }
+    deleteSnapshotFile(dir, nextSessionID)
+  }
+}
+
+function applySessionMutationToSnapshots(dir: string, mutation: SessionMutation) {
+  if (mutation.type === "delete-session") {
+    deleteSnapshotFile(dir, mutation.sessionID)
+    return
+  }
+
+  if (mutation.type === "delete-session-tree") {
+    deleteSnapshotTreeFiles(dir, mutation.sessionID)
+    return
+  }
+
+  writeFileSync(path.join(dir, `${mutation.sessionID}.json`), `${JSON.stringify({ version: 1, ...mutation }, null, 2)}\n`)
+}
+
 describe("tmux-opencode plugin", () => {
   let tmpDir: string
 
@@ -243,7 +287,15 @@ describe("tmux-opencode plugin", () => {
     resolveTmuxContextMock.mockReset()
     renameTmuxWindowMock.mockReset()
     buildTmuxWindowNameMock.mockReset()
+    daemonRequestMock.mockReset()
     resolveTmuxContextMock.mockResolvedValue(null)
+    daemonRequestMock.mockImplementation(async (request: DaemonRequest) => {
+      if (request.type === "mutate") {
+        applySessionMutationToSnapshots(tmpDir, request.mutation)
+      }
+
+      return { type: "ok" }
+    })
     buildTmuxWindowNameMock.mockImplementation(({ projectName }: { projectName: string }) => {
       const sanitize = (value: string, maxLength: number) =>
         value
@@ -889,76 +941,36 @@ describe("tmux-opencode plugin", () => {
     expect(existsSync(path.join(tmpDir, "ses-child-late.json"))).toBe(false)
   })
 
-  it("uses a consistent status directory across child snapshot existence and write checks", async () => {
-    vi.resetModules()
+  it("sends a delete-tree daemon mutation for root exit cleanup", async () => {
+    const hooks = await plugin({ client: makeClient({ title: "Root session" }) } as never)
 
-    const originalStatusDir = tmpDir
-    const swappedStatusDir = mkdtempSync(path.join(os.tmpdir(), "tmux-opencode-plugin-swap-"))
-    let snapshotExistsDirectory: string | undefined
-    let writeSnapshotDirectory: string | undefined
+    await hooks.event!(busyEvent("ses-root-daemon-delete"))
+    daemonRequestMock.mockClear()
+    await hooks.event!(commandExecutedEvent("ses-root-daemon-delete", "/exit") as never)
 
-    vi.doMock("../status-store", () => ({
-      deleteSnapshot: vi.fn(),
-      deleteSnapshotTree: vi.fn(),
-      readSnapshot: vi.fn(),
-      snapshotExists: vi.fn(async (directory: string) => {
-        snapshotExistsDirectory = directory
-        process.env[STATUS_DIR_ENV_KEY] = swappedStatusDir
-        return true
-      }),
-      writeSnapshot: vi.fn(async (directory: string) => {
-        writeSnapshotDirectory = directory
-      }),
+    expect(daemonRequestMock).toHaveBeenCalledWith(expect.objectContaining({
+      mutation: { type: "delete-session-tree", sessionID: "ses-root-daemon-delete" },
+      type: "mutate",
     }))
+  })
 
-    const { default: isolatedPlugin } = await import("../index")
+  it("does not send a delete daemon mutation when a child session exits", async () => {
     const client = makeClient({
       sessions: {
-        "ses-root-consistent": makeSession("ses-root-consistent", { title: "Root session" }),
-        "ses-child-consistent": makeSession("ses-child-consistent", {
-          parentID: "ses-root-consistent",
+        "ses-root-daemon-child-exit": makeSession("ses-root-daemon-child-exit", { title: "Root session" }),
+        "ses-child-daemon-exit": makeSession("ses-child-daemon-exit", {
+          parentID: "ses-root-daemon-child-exit",
           title: "Child session",
         }),
       },
     })
-    const hooks = await isolatedPlugin({ client } as never)
+    const hooks = await plugin({ client } as never)
 
-    process.env[STATUS_DIR_ENV_KEY] = originalStatusDir
-    await hooks.event!(busyEvent("ses-child-consistent"))
+    await hooks.event!(busyEvent("ses-root-daemon-child-exit"))
+    await hooks.event!(busyEvent("ses-child-daemon-exit"))
+    daemonRequestMock.mockClear()
+    await hooks.event!(commandExecutedEvent("ses-child-daemon-exit", "/exit") as never)
 
-    expect(snapshotExistsDirectory).toBe(originalStatusDir)
-    expect(writeSnapshotDirectory).toBe(originalStatusDir)
-  })
-
-  it("uses a consistent status directory across root snapshot reads and cleanup", async () => {
-    vi.resetModules()
-
-    const originalStatusDir = tmpDir
-    const swappedStatusDir = mkdtempSync(path.join(os.tmpdir(), "tmux-opencode-plugin-swap-"))
-    let readSnapshotDirectory: string | undefined
-    let deleteSnapshotTreeDirectory: string | undefined
-
-    vi.doMock("../status-store", () => ({
-      deleteSnapshot: vi.fn(),
-      deleteSnapshotTree: vi.fn(async (directory: string) => {
-        deleteSnapshotTreeDirectory = directory
-      }),
-      readSnapshot: vi.fn(async (directory: string) => {
-        readSnapshotDirectory = directory
-        process.env[STATUS_DIR_ENV_KEY] = swappedStatusDir
-        return { parentID: null }
-      }),
-      snapshotExists: vi.fn(async () => true),
-      writeSnapshot: vi.fn(),
-    }))
-
-    const { default: isolatedPlugin } = await import("../index")
-    const hooks = await isolatedPlugin({ client: makeClient({ title: "Root session" }) } as never)
-
-    process.env[STATUS_DIR_ENV_KEY] = originalStatusDir
-    await hooks.event!(commandExecutedEvent("ses-root-consistent-dir", "/exit") as never)
-
-    expect(readSnapshotDirectory).toBe(originalStatusDir)
-    expect(deleteSnapshotTreeDirectory).toBe(originalStatusDir)
+    expect(daemonRequestMock).not.toHaveBeenCalled()
   })
 })
