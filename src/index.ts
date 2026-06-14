@@ -64,7 +64,7 @@ function tmuxFields(tmuxContext: TmuxContext | null | undefined) {
   }
 }
 
-export async function sendSessionMutation(mutation: SessionMutation) {
+async function sendSessionMutation(mutation: SessionMutation) {
   try {
     const client = createDaemonClient({ socketPath: daemonSocketPath() })
     const response = await client.request({ type: "mutate", protocolVersion: DAEMON_PROTOCOL_VERSION, mutation })

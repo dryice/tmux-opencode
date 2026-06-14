@@ -9,47 +9,27 @@ vi.mock("../daemon/client", () => ({
 describe("daemon client integration", () => {
   it("sends upsert-session mutations", async () => {
     requestMock.mockResolvedValue({ type: "ok" })
-    const { sendSessionMutation } = await import("../index")
-    await sendSessionMutation({
-      type: "upsert-session",
-      sessionID: "ses-1",
-      parentID: null,
-      kind: "root",
-      title: "Main session",
-      status: "working",
-      summary: "Generating code",
-      updatedAt: 4102444800000,
-    })
+    const plugin = (await import("../index")).default
+    const hooks = await plugin({ client: { session: { get: async () => ({ data: { title: "test" } }) } } } as never)
+
+    await hooks.event!({ event: { type: "session.status", properties: { sessionID: "ses-1", status: { type: "busy" } } } } as never)
+
     expect(requestMock).toHaveBeenCalledWith(expect.objectContaining({ type: "mutate" }))
   })
 
   it("does not throw when the daemon is unreachable", async () => {
     requestMock.mockRejectedValue(new Error("connect ECONNREFUSED"))
-    const { sendSessionMutation } = await import("../index")
-    await expect(sendSessionMutation({
-      type: "upsert-session",
-      sessionID: "ses-2",
-      parentID: null,
-      kind: "root",
-      title: "Main session",
-      status: "working",
-      summary: "Generating code",
-      updatedAt: 4102444800000,
-    })).resolves.toBeUndefined()
+    const plugin = (await import("../index")).default
+    const hooks = await plugin({ client: { session: { get: async () => ({ data: { title: "test" } }) } } } as never)
+
+    await expect(hooks.event!({ event: { type: "session.status", properties: { sessionID: "ses-2", status: { type: "busy" } } } } as never)).resolves.toBeUndefined()
   })
 
   it("does not throw when the daemon returns an error response", async () => {
     requestMock.mockResolvedValue({ type: "error", code: "INVALID_REQUEST", message: "bad mutation" })
-    const { sendSessionMutation } = await import("../index")
-    await expect(sendSessionMutation({
-      type: "upsert-session",
-      sessionID: "ses-3",
-      parentID: null,
-      kind: "root",
-      title: "Main session",
-      status: "working",
-      summary: "Generating code",
-      updatedAt: 4102444800000,
-    })).resolves.toBeUndefined()
+    const plugin = (await import("../index")).default
+    const hooks = await plugin({ client: { session: { get: async () => ({ data: { title: "test" } }) } } } as never)
+
+    await expect(hooks.event!({ event: { type: "session.status", properties: { sessionID: "ses-3", status: { type: "busy" } } } } as never)).resolves.toBeUndefined()
   })
 })
