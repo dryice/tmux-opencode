@@ -397,6 +397,9 @@ cat > "$INTERACTIVE_DIR/bin/fzf" <<'EOF'
 set -euo pipefail
 
 log_dir="${TMUX_TEST_LOG_DIR:?missing TMUX_TEST_LOG_DIR}"
+if [[ -n "${TMUX_TEST_EVENT_FILE:-}" ]]; then
+  printf 'fzf\n' >> "$TMUX_TEST_EVENT_FILE"
+fi
 input_file="$log_dir/fzf-stdin.txt"
 args_file="$log_dir/fzf-args.txt"
 selection_file="$log_dir/fzf-selection.txt"
@@ -444,6 +447,38 @@ printf '%s\n' "$*" >> "$log_dir/tmux-calls.txt"
 EOF
 chmod +x "$INTERACTIVE_DIR/bin/tmux"
 
+cat > "$INTERACTIVE_DIR/bin/node" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+log_dir="${TMUX_TEST_LOG_DIR:?missing TMUX_TEST_LOG_DIR}"
+printf '%s\n' "$*" >> "$log_dir/daemon-cli-calls.txt"
+
+if [[ "$*" == *" prune-and-list" ]]; then
+  if [[ "${TMUX_OPENCODE_SHOW_SUBAGENTS:-0}" == "1" ]]; then
+    printf '{"type":"rows","rows":[{"sessionID":"root-1","kind":"root","status":"working","projectName":"tmux-opencode","title":"Main session","tmuxSessionID":"$9","tmuxWindowID":"@11","tmuxPaneID":"%%42"},{"sessionID":"sub-1","kind":"subagent","status":"waiting","projectName":"tmux-opencode","title":"Subagent helper"}]}'
+    exit 0
+  fi
+
+  if [[ -n "${TMUX_TEST_EMPTY_DAEMON_ROWS:-}" ]]; then
+    printf '{"type":"rows","rows":[]}'
+    exit 0
+  fi
+
+  printf '{"type":"rows","rows":[{"sessionID":"root-1","kind":"root","status":"working","projectName":"tmux-opencode","title":"Main session","tmuxSessionID":"$9","tmuxWindowID":"@11","tmuxPaneID":"%%42"}]}'
+  exit 0
+fi
+
+if [[ "$*" == *" ensure-running" ]]; then
+  printf '{"type":"ok"}'
+  exit 0
+fi
+
+printf 'unexpected daemon cli command: %s\n' "$*" >&2
+exit 64
+EOF
+chmod +x "$INTERACTIVE_DIR/bin/node"
+
 PATH="$INTERACTIVE_DIR/bin:$PATH" TMUX_TEST_LOG_DIR="$INTERACTIVE_DIR/logs" TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" FZF_SELECTION=$'root-1\troot\tworking\ttmux-opencode\tMain session\t$9\t@11\t%42' bash "$ROOT_DIR/scripts/popup_command.sh" <<< 'x'
 
 assert_file_exists "$INTERACTIVE_DIR/logs/fzf-stdin.txt"
@@ -481,6 +516,24 @@ printf '%s\n' "$*" >> "$log_dir/tmux-calls.txt"
 EOF
 chmod +x "$REAL_FZF_DIR/bin/tmux"
 
+cat > "$REAL_FZF_DIR/bin/node" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$*" == *" prune-and-list" ]]; then
+  printf '{"type":"rows","rows":[{"sessionID":"root-1","kind":"root","status":"working","projectName":"tmux-opencode","title":"Main session","tmuxSessionID":"$9","tmuxWindowID":"@11","tmuxPaneID":"%%42"}]}'
+  exit 0
+fi
+
+if [[ "$*" == *" ensure-running" ]]; then
+  printf '{"type":"ok"}'
+  exit 0
+fi
+
+exit 64
+EOF
+chmod +x "$REAL_FZF_DIR/bin/node"
+
 if command -v fzf >/dev/null 2>&1; then
   set +e
   real_fzf_output="$(PATH="$REAL_FZF_DIR/bin:$PATH" TMUX_TEST_LOG_DIR="$REAL_FZF_DIR/logs" TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" FZF_DEFAULT_OPTS='--filter=Main' bash "$ROOT_DIR/scripts/popup_command.sh" 2>&1)"
@@ -511,36 +564,89 @@ if command -v fzf >/dev/null 2>&1; then
   assert_tmux_call_sequence "$REAL_FZF_DIR/logs/tmux-calls.txt" '$9' '@11' '%42'
 fi
 
-rm -f "$INTERACTIVE_DIR/logs/fzf-stdin.txt" "$INTERACTIVE_DIR/logs/fzf-args.txt" "$INTERACTIVE_DIR/logs/fzf-selection.txt" "$INTERACTIVE_DIR/logs/tmux-calls.txt"
+rm -f "$INTERACTIVE_DIR/logs/fzf-stdin.txt" "$INTERACTIVE_DIR/logs/fzf-args.txt" "$INTERACTIVE_DIR/logs/fzf-selection.txt" "$INTERACTIVE_DIR/logs/tmux-calls.txt" "$INTERACTIVE_DIR/logs/daemon-cli-calls.txt"
 
-cat > "$INTERACTIVE_DIR/bin/python3" <<'EOF'
+daemon_prune_events="$INTERACTIVE_DIR/logs/daemon-prune-events.txt"
+
+cat > "$INTERACTIVE_DIR/bin/node" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "${1:-}" == *"scripts/prune_stale_snapshots.py" ]]; then
-  printf 'simulated prune failure\n' >&2
-  exit 23
+if [[ "$*" == *" prune-and-list" ]]; then
+  printf 'daemon-prune-and-list\n' >> "${TMUX_TEST_EVENT_FILE:?missing TMUX_TEST_EVENT_FILE}"
+  printf '{"type":"rows","rows":[{"sessionID":"root-1","kind":"root","status":"working","projectName":"tmux-opencode","title":"Main session","tmuxSessionID":"$9","tmuxWindowID":"@11","tmuxPaneID":"%%42"}]}'
+  exit 0
 fi
 
-exec "${TMUX_TEST_REAL_PYTHON:?missing TMUX_TEST_REAL_PYTHON}" "$@"
+if [[ "$*" == *" ensure-running" ]]; then
+  printf 'daemon-ensure-running\n' >> "${TMUX_TEST_EVENT_FILE:?missing TMUX_TEST_EVENT_FILE}"
+  printf '{"type":"ok"}'
+  exit 0
+fi
+
+exit 64
 EOF
-chmod +x "$INTERACTIVE_DIR/bin/python3"
+chmod +x "$INTERACTIVE_DIR/bin/node"
 
-set +e
-prune_failure_output="$(PATH="$INTERACTIVE_DIR/bin:$PATH" TMUX_TEST_REAL_PYTHON="$(command -v python3)" TMUX_TEST_LOG_DIR="$INTERACTIVE_DIR/logs" TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" FZF_SELECTION=$'root-1\troot\tworking\ttmux-opencode\tMain session\t$9\t@11\t%42' bash "$ROOT_DIR/scripts/popup_command.sh" 2>&1 <<< 'x')"
-prune_failure_status=$?
-set -e
+PATH="$INTERACTIVE_DIR/bin:$PATH" TMUX_TEST_LOG_DIR="$INTERACTIVE_DIR/logs" TMUX_TEST_EVENT_FILE="$daemon_prune_events" FZF_SELECTION=$'root-1\troot\tworking\ttmux-opencode\tMain session\t$9\t@11\t%42' bash "$ROOT_DIR/scripts/popup_command.sh" <<< 'x'
 
-if [[ $prune_failure_status -ne 0 ]]; then
-  printf 'Expected popup_command.sh to continue when stale snapshot pruning fails\nActual status: %s\nActual output:\n%s\n' "$prune_failure_status" "$prune_failure_output" >&2
-  exit 1
-fi
-
-assert_contains "$prune_failure_output" "prune_stale_snapshots.py failed with exit code 23"
 assert_file_exists "$INTERACTIVE_DIR/logs/tmux-calls.txt"
 assert_tmux_call_sequence "$INTERACTIVE_DIR/logs/tmux-calls.txt" '$9' '@11' '%42'
+assert_file_exists "$daemon_prune_events"
 
-rm -f "$INTERACTIVE_DIR/bin/python3" "$INTERACTIVE_DIR/logs/fzf-stdin.txt" "$INTERACTIVE_DIR/logs/fzf-args.txt" "$INTERACTIVE_DIR/logs/fzf-selection.txt" "$INTERACTIVE_DIR/logs/tmux-calls.txt"
+python3 - "$daemon_prune_events" <<'PY'
+import sys
+from pathlib import Path
+
+events = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+
+try:
+    prune_index = events.index("daemon-prune-and-list")
+    fzf_index = events.index("fzf")
+except ValueError as exc:
+    print(
+        "Expected daemon prune-and-list and fzf startup events",
+        f"Actual events: {events}",
+        f"Missing: {exc}",
+        sep="\n",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+if not prune_index < fzf_index:
+    print(
+        "Expected daemon prune-and-list to complete before fzf starts",
+        f"Actual events: {events}",
+        sep="\n",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+PY
+
+rm -f "$INTERACTIVE_DIR/logs/fzf-stdin.txt" "$INTERACTIVE_DIR/logs/fzf-args.txt" "$INTERACTIVE_DIR/logs/fzf-selection.txt" "$INTERACTIVE_DIR/logs/tmux-calls.txt" "$daemon_prune_events"
+
+cat > "$INTERACTIVE_DIR/bin/node" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$*" == *" prune-and-list" ]]; then
+  if [[ "${TMUX_OPENCODE_SHOW_SUBAGENTS:-0}" == "1" ]]; then
+    printf '{"type":"rows","rows":[{"sessionID":"root-1","kind":"root","status":"working","projectName":"tmux-opencode","title":"Main session","tmuxSessionID":"$9","tmuxWindowID":"@11","tmuxPaneID":"%%42"},{"sessionID":"sub-1","kind":"subagent","status":"waiting","projectName":"tmux-opencode","title":"Subagent helper"}]}'
+    exit 0
+  fi
+
+  printf '{"type":"rows","rows":[{"sessionID":"root-1","kind":"root","status":"working","projectName":"tmux-opencode","title":"Main session","tmuxSessionID":"$9","tmuxWindowID":"@11","tmuxPaneID":"%%42"}]}'
+  exit 0
+fi
+
+if [[ "$*" == *" ensure-running" ]]; then
+  printf '{"type":"ok"}'
+  exit 0
+fi
+
+exit 64
+EOF
+chmod +x "$INTERACTIVE_DIR/bin/node"
 
 PATH="$INTERACTIVE_DIR/bin:$PATH" TMUX_TEST_LOG_DIR="$INTERACTIVE_DIR/logs" TMUX_OPENCODE_STATUS_DIR="$WORK_DIR" FZF_SELECTION=$'root-1\troot\tworking\ttmux-opencode\tMain session\t$9\t@11\t%42' FZF_EXIT_CODE=130 bash "$ROOT_DIR/scripts/popup_command.sh" <<< 'x'
 
@@ -606,6 +712,93 @@ fi
 assert_contains "$missing_fzf_output" "fzf"
 assert_not_contains "$missing_fzf_output" "Press any key to close"
 
+rm -f "$INTERACTIVE_DIR/logs/fzf-stdin.txt" "$INTERACTIVE_DIR/logs/fzf-args.txt" "$INTERACTIVE_DIR/logs/fzf-selection.txt" "$INTERACTIVE_DIR/logs/tmux-calls.txt" "$INTERACTIVE_DIR/logs/daemon-cli-calls.txt"
+
+cat > "$INTERACTIVE_DIR/bin/node" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+log_dir="${TMUX_TEST_LOG_DIR:?missing TMUX_TEST_LOG_DIR}"
+printf '%s\n' "$*" >> "$log_dir/daemon-cli-calls.txt"
+
+if [[ "$*" == *" prune-and-list" ]]; then
+  count_file="$log_dir/daemon-prune-count.txt"
+  count=0
+  if [[ -f "$count_file" ]]; then
+    count="$(<"$count_file")"
+  fi
+  count=$((count + 1))
+  printf '%s' "$count" > "$count_file"
+
+  if [[ "$count" -eq 1 ]]; then
+    exit 42
+  fi
+
+  printf '{"type":"rows","rows":[{"sessionID":"root-1","kind":"root","status":"working","projectName":"tmux-opencode","title":"Main session","tmuxSessionID":"$9","tmuxWindowID":"@11","tmuxPaneID":"%%42"}]}'
+  exit 0
+fi
+
+if [[ "$*" == *" ensure-running" ]]; then
+  printf '{"type":"ok"}'
+  exit 0
+fi
+
+printf 'unexpected daemon cli command: %s\n' "$*" >&2
+exit 64
+EOF
+chmod +x "$INTERACTIVE_DIR/bin/node"
+
+PATH="$INTERACTIVE_DIR/bin:$PATH" TMUX_TEST_LOG_DIR="$INTERACTIVE_DIR/logs" FZF_SELECTION=$'root-1\troot\tworking\ttmux-opencode\tMain session\t$9\t@11\t%42' bash "$ROOT_DIR/scripts/popup_command.sh" <<< 'x'
+
+assert_contains "$(<"$INTERACTIVE_DIR/logs/daemon-cli-calls.txt")" "prune-and-list"
+assert_contains "$(<"$INTERACTIVE_DIR/logs/daemon-cli-calls.txt")" "ensure-running"
+
+python3 - "$INTERACTIVE_DIR/logs/daemon-cli-calls.txt" <<'PY'
+import sys
+from pathlib import Path
+
+commands = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+prune_calls = [command for command in commands if command.endswith(" prune-and-list")]
+ensure_calls = [command for command in commands if command.endswith(" ensure-running")]
+
+if len(prune_calls) != 2 or len(ensure_calls) != 1:
+    print(
+        "Expected exactly two prune-and-list calls with one ensure-running retry",
+        f"Actual commands: {commands}",
+        sep="\n",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+PY
+
+assert_file_exists "$INTERACTIVE_DIR/logs/tmux-calls.txt"
+assert_tmux_call_sequence "$INTERACTIVE_DIR/logs/tmux-calls.txt" '$9' '@11' '%42'
+
+rm -f "$INTERACTIVE_DIR/logs/fzf-stdin.txt" "$INTERACTIVE_DIR/logs/fzf-args.txt" "$INTERACTIVE_DIR/logs/fzf-selection.txt" "$INTERACTIVE_DIR/logs/tmux-calls.txt" "$INTERACTIVE_DIR/logs/daemon-cli-calls.txt" "$INTERACTIVE_DIR/logs/daemon-prune-count.txt"
+
+cat > "$INTERACTIVE_DIR/bin/node" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$*" == *" prune-and-list" ]]; then
+  if [[ -n "${TMUX_TEST_EMPTY_DAEMON_ROWS:-}" ]]; then
+    printf '{"type":"rows","rows":[]}'
+    exit 0
+  fi
+
+  printf '{"type":"rows","rows":[{"sessionID":"root-1","kind":"root","status":"working","projectName":"tmux-opencode","title":"Main session","tmuxSessionID":"$9","tmuxWindowID":"@11","tmuxPaneID":"%%42"}]}'
+  exit 0
+fi
+
+if [[ "$*" == *" ensure-running" ]]; then
+  printf '{"type":"ok"}'
+  exit 0
+fi
+
+exit 64
+EOF
+chmod +x "$INTERACTIVE_DIR/bin/node"
+
 cat > "$INTERACTIVE_DIR/bin/bash" <<'EOF'
 #!/bin/bash
 set -euo pipefail
@@ -634,7 +827,7 @@ rm -f "$INTERACTIVE_DIR/bin/bash"
 rm -f "$INTERACTIVE_DIR/logs/fzf-stdin.txt" "$INTERACTIVE_DIR/logs/fzf-args.txt" "$INTERACTIVE_DIR/logs/fzf-selection.txt" "$INTERACTIVE_DIR/logs/tmux-calls.txt"
 
 set +e
-empty_fzf_output="$(PATH="$INTERACTIVE_DIR/bin:$PATH" TMUX_TEST_LOG_DIR="$INTERACTIVE_DIR/logs" TMUX_OPENCODE_STATUS_DIR="$EMPTY_DIR" FZF_SELECT_FIRST=1 bash "$ROOT_DIR/scripts/popup_command.sh" 2>&1 <<< 'x')"
+empty_fzf_output="$(PATH="$INTERACTIVE_DIR/bin:$PATH" TMUX_TEST_LOG_DIR="$INTERACTIVE_DIR/logs" TMUX_TEST_EMPTY_DAEMON_ROWS=1 FZF_SELECT_FIRST=1 bash "$ROOT_DIR/scripts/popup_command.sh" 2>&1 <<< 'x')"
 empty_fzf_status=$?
 set -e
 
