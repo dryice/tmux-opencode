@@ -119,11 +119,20 @@ function deriveProjectName(project: ProjectInfo | undefined): string | undefined
     return explicitName
   }
 
-  if (!project?.worktree) {
-    return undefined
+  // OpenCode stores worktree="/" for the "global" project used when no git repo
+  // is found — fall back to cwd so the window still gets a meaningful name.
+  let worktree = project?.worktree
+  if (!worktree || worktree === "/") {
+    try {
+      worktree = process.cwd()
+    } catch (error) {
+      if (error instanceof Error) return undefined
+      throw error
+    }
   }
 
-  return path.basename(project.worktree)
+  const folderName = path.basename(worktree)
+  return folderName || undefined
 }
 
 function normalizeCommand(command: string | undefined): string | undefined {

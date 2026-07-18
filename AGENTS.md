@@ -106,7 +106,7 @@ Each file is `${sessionID}.json` in the status directory:
 ```
 
 - `kind`: `"root"` when `parentID` is null/absent, `"subagent"` when `parentID` is set.
-- `projectName`: optional display name derived from the OpenCode project context (`project.name`, or the worktree folder name as fallback).
+- `projectName`: optional display name derived from the OpenCode project context (`project.name`, the worktree folder name, or `process.cwd()`'s basename when worktree is missing or `/`).
 - `updatedAt`: epoch milliseconds from `Date.now()`.
 - Write is atomic: writes to `.json.tmp`, then `rename()` to `.json`.
 

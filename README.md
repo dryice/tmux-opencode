@@ -61,7 +61,7 @@ The writer uses these snapshot fields:
 - `summary`
 - `updatedAt`
 
-`projectName` is taken from the OpenCode project context when available. The plugin prefers `project.name` and falls back to the worktree folder name.
+`projectName` is taken from the OpenCode project context when available. The plugin prefers `project.name`, then falls back to the worktree folder name. When the worktree is missing or `/` (OpenCode's global project for non-git folders), it falls back to the basename of `process.cwd()`.
 
 To override the snapshot directory:
 

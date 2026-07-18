@@ -416,6 +416,88 @@ describe("tmux-opencode plugin", () => {
     expect(snap.projectName).toBe("fallback-project")
   })
 
+  it("falls back to process.cwd() basename when worktree is the filesystem root", async () => {
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/Users/example/chatUI")
+    try {
+      const client = makeClient({ title: "Coding task" })
+      const hooks = await plugin({
+        client,
+        project: { worktree: "/" },
+      } as never)
+      const event = hooks.event
+      if (!event) throw new TypeError("Expected plugin event hook")
+      await event(busyEvent("ses-project-cwd-root"))
+
+      const snap = readSnapshot(tmpDir, "ses-project-cwd-root")
+      expect(snap.projectName).toBe("chatUI")
+    } finally {
+      cwdSpy.mockRestore()
+    }
+  })
+
+  it("falls back to process.cwd() basename when worktree is missing", async () => {
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/Users/example/standalone-project")
+    try {
+      const client = makeClient({ title: "Coding task" })
+      const hooks = await plugin({
+        client,
+        project: {},
+      } as never)
+      const event = hooks.event
+      if (!event) throw new TypeError("Expected plugin event hook")
+      await event(busyEvent("ses-project-cwd-missing"))
+
+      const snap = readSnapshot(tmpDir, "ses-project-cwd-missing")
+      expect(snap.projectName).toBe("standalone-project")
+    } finally {
+      cwdSpy.mockRestore()
+    }
+  })
+
+  it("does not rename the tmux window when neither worktree nor cwd yield a folder name", async () => {
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/")
+    try {
+      resolveTmuxContextMock.mockResolvedValue({
+        tmuxSessionID: "$3",
+        tmuxWindowID: "@4",
+        tmuxPaneID: "%5",
+      })
+      const client = makeClient({ title: "Coding task" })
+      const hooks = await plugin({
+        client,
+        project: { worktree: "/" },
+      } as never)
+      const event = hooks.event
+      if (!event) throw new TypeError("Expected plugin event hook")
+      await event(busyEvent("ses-project-empty-cwd"))
+
+      expect(renameTmuxWindowMock).not.toHaveBeenCalled()
+    } finally {
+      cwdSpy.mockRestore()
+    }
+  })
+
+  it("does not fail plugin initialization when process.cwd() is unavailable", async () => {
+    const cwdSpy = vi.spyOn(process, "cwd").mockImplementation(() => {
+      throw new Error("cwd unavailable")
+    })
+    try {
+      const client = makeClient({ title: "Coding task" })
+      const hooks = await plugin({
+        client,
+        project: { worktree: "/" },
+      } as never)
+
+      const event = hooks.event
+      if (!event) throw new TypeError("Expected plugin event hook")
+      await expect(event(busyEvent("ses-project-cwd-error"))).resolves.toBeUndefined()
+      const snap = readSnapshot(tmpDir, "ses-project-cwd-error")
+      expect(snap.projectName).toBeUndefined()
+    } finally {
+      cwdSpy.mockRestore()
+    }
+  })
+
   it("writes a question snapshot for question.asked events", async () => {
     const client = makeClient({ title: "Asking" })
     const hooks = await plugin({ client } as never)
