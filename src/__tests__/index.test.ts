@@ -416,6 +416,56 @@ describe("tmux-opencode plugin", () => {
     expect(snap.projectName).toBe("fallback-project")
   })
 
+  it("falls back to process.cwd() basename when worktree is the filesystem root", async () => {
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/Users/example/chatUI")
+    try {
+      const client = makeClient({ title: "Coding task" })
+      const hooks = await plugin({
+        client,
+        project: { worktree: "/" },
+      } as never)
+      await hooks.event!(busyEvent("ses-project-cwd-root"))
+
+      const snap = readSnapshot(tmpDir, "ses-project-cwd-root")
+      expect(snap.projectName).toBe("chatUI")
+    } finally {
+      cwdSpy.mockRestore()
+    }
+  })
+
+  it("falls back to process.cwd() basename when worktree is missing", async () => {
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/Users/example/standalone-project")
+    try {
+      const client = makeClient({ title: "Coding task" })
+      const hooks = await plugin({
+        client,
+        project: {},
+      } as never)
+      await hooks.event!(busyEvent("ses-project-cwd-missing"))
+
+      const snap = readSnapshot(tmpDir, "ses-project-cwd-missing")
+      expect(snap.projectName).toBe("standalone-project")
+    } finally {
+      cwdSpy.mockRestore()
+    }
+  })
+
+  it("does not rename the tmux window when neither worktree nor cwd yield a folder name", async () => {
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/")
+    try {
+      const client = makeClient({ title: "Coding task" })
+      const hooks = await plugin({
+        client,
+        project: { worktree: "/" },
+      } as never)
+      await hooks.event!(busyEvent("ses-project-empty-cwd"))
+
+      expect(renameTmuxWindowMock).not.toHaveBeenCalled()
+    } finally {
+      cwdSpy.mockRestore()
+    }
+  })
+
   it("writes a question snapshot for question.asked events", async () => {
     const client = makeClient({ title: "Asking" })
     const hooks = await plugin({ client } as never)
